@@ -1,10 +1,13 @@
 import { createServer } from "node:http";
 import { WebSocketServer } from "ws";
 import { Profiles } from "./profiles.ts";
+import { GameStore } from "./game-store.ts";
+import { Cafes } from "./cafes.ts";
 import { Town } from "./town.ts";
 export type Config = {
   profilePath: string;
   origins: string[];
+  gamePath?: string;
   secure: boolean;
   capacity?: number;
   graceMs?: number;
@@ -29,11 +32,15 @@ export async function createApp(config: Config) {
     throw Error("Invalid simulation or reconnect configuration");
   const profiles = new Profiles(config.profilePath);
   await profiles.init();
+  const cafes = new Cafes(
+    new GameStore(config.gamePath ?? config.profilePath + ".game.sqlite"),
+  );
   const town = new Town(
     config.capacity ?? 2,
     config.graceMs ?? 15000,
     42,
     replicateEveryTicks,
+    cafes,
   );
   const token = (cookie = "") =>
     cookie
@@ -162,6 +169,7 @@ export async function createApp(config: Config) {
       for (const ws of wss.clients) ws.terminate();
       await new Promise<void>((resolve) => wss.close(() => resolve()));
       await new Promise<void>((resolve) => server.close(() => resolve()));
+      cafes.shutdown();
     },
   };
 }

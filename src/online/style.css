@@ -498,3 +498,79 @@ dialog h2 {
     scroll-behavior: auto !important;
   }
 }
+.wallet {
+  font-size: 30px;
+  letter-spacing: -1px;
+  font-weight: 600;
+}
+.cafe-controls h2 {
+  margin-top: 20px;
+  margin-bottom: 10px;
+}
+.action-button {
+  display: block;
+  width: 100%;
+  min-height: 40px;
+  margin: 8px 0;
+  text-align: left;
+  transition: background 0.15s;
+}
+.action-button:hover:enabled {
+  background: #e8eddc;
+}
+.action-button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.action-notice {
+  border-left: 3px solid #b4c697;
+  padding: 8px 10px;
+  background: #f1f4e8;
+}
+.order-row {
+  padding: 12px;
+  background: #f4f3e8;
+  border: 1px solid #e7e8d9;
+  border-radius: 12px;
+  margin: 10px 0;
+}
+.order-row b {
+  font-size: 12px;
+}
+.order-row small {
+  display: block;
+  color: #8b977c;
+  font-size: 11px;
+  margin: 6px 0;
+}
+.cafe-controls details {
+  margin-top: 18px;
+}
+.cafe-controls summary {
+  font-size: 12px;
+  cursor: pointer;
+  padding: 12px 0;
+}
+.cafe-controls:empty {
+  display: none;
+}
+@media (max-width: 760px) {
+  .cafe-controls {
+    grid-column: 1/-1;
+  }
+}
+@media (min-width: 761px) {
+  .cafe-controls {
+    max-height: 690px;
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: #b8c7a1 transparent;
+  }
+}
+
+@media (min-width: 761px) {
+  .world-card {
+    position: sticky;
+    top: 20px;
+  }
+}

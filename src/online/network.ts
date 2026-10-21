@@ -1,3 +1,4 @@
+import type { Action, ActionResult, Cafe } from "../../shared/cafe.ts";
 import type {
   PublicState,
   ServerMessage,
@@ -24,6 +25,8 @@ export class Network {
       status: (s: Connection, message: string) => void;
       welcome: (w: Welcome) => void;
       snapshot: (s: PublicState) => void;
+      personal?: (cafe: Cafe) => void;
+      result?: (result: ActionResult) => void;
     },
   ) {}
   private status(s: Connection, message: string) {
@@ -82,6 +85,8 @@ export class Network {
           this.callbacks.welcome(msg);
         }
         if (msg.type === "state") this.callbacks.snapshot(msg);
+        if (msg.type === "personal") this.callbacks.personal?.(msg.cafe);
+        if (msg.type === "result") this.callbacks.result?.(msg);
         if (msg.type === "error") {
           if (msg.code === "REPLACED" || msg.code === "FULL") {
             this.stopped = true;
@@ -131,6 +136,23 @@ export class Network {
       this.socket.send(
         JSON.stringify({ type: "input", seq: this.sequence++, x, z }),
       );
+  }
+  action(action: Action["action"], target?: string) {
+    if (
+      this.state !== "connected" ||
+      this.socket?.readyState !== WebSocket.OPEN
+    )
+      return;
+    const requestId = crypto.randomUUID();
+    this.socket.send(
+      JSON.stringify({
+        type: "action",
+        action,
+        requestId,
+        ...(target ? { target } : {}),
+      }),
+    );
+    return requestId;
   }
   stop() {
     this.stopped = true;

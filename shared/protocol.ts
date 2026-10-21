@@ -1,3 +1,4 @@
+import type { ActionResult, Cafe, CafeView, Property } from "./cafe.ts";
 export type PlayerState = {
   id: string;
   sessionId: string;
@@ -9,6 +10,7 @@ export type PlayerState = {
   moving: boolean;
   connected: boolean;
   color: number;
+  area?: string;
 };
 export type PublicState = {
   type: "state";
@@ -16,6 +18,8 @@ export type PublicState = {
   time: number;
   connected: number;
   players: PlayerState[];
+  properties?: Property[];
+  cafe?: CafeView;
 };
 export type Welcome = {
   type: "welcome";
@@ -27,6 +31,8 @@ export type Welcome = {
 };
 export type ServerMessage =
   | PublicState
+  | ActionResult
+  | { type: "personal"; cafe: Cafe }
   | Welcome
   | { type: "error"; code: string; message: string };
 export const PROTOCOL_VERSION = 1;

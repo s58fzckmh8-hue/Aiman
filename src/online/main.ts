@@ -1,11 +1,12 @@
 import "./style.css";
 import { Network, type Connection } from "./network.ts";
+import { CafePanel } from "./cafe-panel.ts";
 import { World } from "./world.ts";
 import type { PublicState } from "../../shared/protocol.ts";
 const $ = <T extends HTMLElement = HTMLElement>(s: string) =>
   document.querySelector<T>(s)!;
 $("#app").innerHTML =
-  `<header><a class="brand" href="./"><span class="brand-icon">🐾</span><div><b>kafe miaw<span style="color:#a0b283">.</span></b><small>A LITTLE COFFEE, A LOT OF CONNECTION</small></div></a><span class="edition">ONLINE FOUNDATION · 01</span></header><main><section class="intro"><div><h1>A small town. A shared beginning.</h1><p>Take a stroll, meet a neighbor, make yourself at home.</p></div><div class="connection" role="status" aria-live="polite"><i id="dot" class="dot"></i><span id="connection-text">Ready when you are.</span></div></section><div class="layout"><section class="world-card"><div class="world-toolbar"><b>✦ <span id="town">Miaw Neighborhood</span></b><small id="location">Shared 3D town · two-player milestone</small></div><div class="scene-wrap"><div id="world"></div><div class="touch-pad" aria-label="Movement controls"><button data-dir="up" aria-label="Move forward">↑</button><button data-dir="left" aria-label="Move left">←</button><button data-dir="down" aria-label="Move backward">↓</button><button data-dir="right" aria-label="Move right">→</button></div><div id="overlay" class="overlay"><div class="welcome"><span class="paw">🐾</span><h2>Your next chapter starts here.</h2><p id="welcome-text">Join a real shared town as a guest. Explore together while we build the next chapter of Kafe Miaw.</p><button class="primary" id="join">Play Online →</button><p style="font-size:10px;margin-bottom:0">Guest identity stays in this browser.<br>No account or cross-device recovery yet.</p></div></div></div><div class="world-footer"><p><b>WASD / arrows</b> to walk · <b>Right-drag</b> to orbit · <b>Scroll</b> to zoom<br>On touch: use the arrows to walk and drag the scene to orbit.</p><div><button id="camera" class="secondary">Reset camera</button> <button id="help" class="secondary">How to play</button></div></div></section><aside><section class="panel"><div class="eyebrow">NEIGHBORS TOGETHER</div><div class="population"><span id="count">0</span> <small>/ <span id="capacity">2</span> connected</small></div><p>Real connections only. Players nearby appear in the town.</p><ul id="roster" class="roster" aria-label="Nearby players"></ul></section><section class="panel"><h2>Your little place</h2><div class="info-row"><span>Guest</span><b id="name">Not connected</b></div><div class="info-row"><span>Town</span><b>Town 001</b></div><div class="info-row"><span>Reserved lot</span><b id="lot">Join to reserve</b></div><p id="identity-note">Your guest profile is saved by the server. A lot is temporary, not your permanent property ID.</p><div id="notice" role="status"></div></section><section class="practice"><h2>A coffee break?</h2><p>Your original café is still here. Serve customers, care for cats and grow your café in a separate offline practice save.</p><a href="./practice.html" class="secondary">Open offline café →</a></section><p class="fine">This build tests two-player movement and reconnection. Twenty lots are reserved for future expansion. Online cafés, cats, shops and account linking are not implemented yet.</p></aside></div><footer><span>KAFE MIAW © 2026 · MULTIPLAYER FOUNDATION</span><span>Little steps. Shared adventures. ♡</span></footer></main><dialog id="how"><h2>Welcome to the neighborhood</h2><p>Choose Play Online to join Town 001. Move with WASD, arrow keys, or the on-screen arrows. Right-drag to rotate and scroll to zoom. Touch users can drag the scene to rotate.</p><p>This milestone supports two guests. Server-controlled movement keeps you inside the map and outside buildings. You can see nearby connected guests move in real time.</p><p>If your connection drops, your spot is held for 15 seconds. Return with this browser to reconnect. A new tab with the same guest replaces the previous connection.</p><p>For coffee, cats and upgrades, open the separate offline café. Its local coins are not an online balance.</p><button id="close-help" class="primary">Let's explore</button></dialog>`;
+  `<header><a class="brand" href="./"><span class="brand-icon">🐾</span><div><b>kafe miaw<span style="color:#a0b283">.</span></b><small>A LITTLE COFFEE, A LOT OF CONNECTION</small></div></a><span class="edition">ONLINE CAFÉ · 02</span></header><main><section class="intro"><div><h1>A small town. A shared beginning.</h1><p>Take a stroll, meet a neighbor, make yourself at home.</p></div><div class="connection" role="status" aria-live="polite"><i id="dot" class="dot"></i><span id="connection-text">Ready when you are.</span></div></section><div class="layout"><section class="world-card"><div class="world-toolbar"><b>✦ <span id="town">Miaw Neighborhood</span></b><small id="location">Shared 3D town · two-player café build</small></div><div class="scene-wrap"><div id="world"></div><div class="touch-pad" aria-label="Movement controls"><button data-dir="up" aria-label="Move forward">↑</button><button data-dir="left" aria-label="Move left">←</button><button data-dir="down" aria-label="Move backward">↓</button><button data-dir="right" aria-label="Move right">→</button></div><div id="overlay" class="overlay"><div class="welcome"><span class="paw">🐾</span><h2>Your next chapter starts here.</h2><p id="welcome-text">Join a real shared town as a guest. Explore together while we build the next chapter of Kafe Miaw.</p><button class="primary" id="join">Play Online →</button><p style="font-size:10px;margin-bottom:0">Guest identity stays in this browser.<br>No account or cross-device recovery yet.</p></div></div></div><div class="world-footer"><p><b>WASD / arrows</b> to walk · <b>Right-drag</b> to orbit · <b>Scroll</b> to zoom<br>On touch: use the arrows to walk and drag the scene to orbit.</p><div><button id="camera" class="secondary">Reset camera</button> <button id="help" class="secondary">How to play</button></div></div></section><aside><section id="cafe-controls" class="panel cafe-controls"></section><section class="panel"><div class="eyebrow">NEIGHBORS TOGETHER</div><div class="population"><span id="count">0</span> <small>/ <span id="capacity">2</span> connected</small></div><p>Real connections only. Players nearby appear in the town.</p><ul id="roster" class="roster" aria-label="Nearby players"></ul></section><section class="panel"><h2>Your little place</h2><div class="info-row"><span>Guest</span><b id="name">Not connected</b></div><div class="info-row"><span>Town</span><b>Town 001</b></div><div class="info-row"><span>Reserved lot</span><b id="lot">Join to reserve</b></div><p id="identity-note">Your guest profile is saved by the server. A lot is temporary, not your permanent property ID.</p><div id="notice" role="status"></div></section><section class="practice"><h2>A coffee break?</h2><p>Your original café is still here. Serve customers, care for cats and grow your café in a separate offline practice save.</p><a href="./practice.html" class="secondary">Open offline café →</a></section><p class="fine">This build tests two-player movement and reconnection. Twenty lots are reserved for future expansion. Run your own café, welcome visitors and care for your cats. Shops, home building, genetics and account linking are still planned.</p></aside></div><footer><span>KAFE MIAW © 2026 · ONLINE CAFÉ BUILD</span><span>Little steps. Shared adventures. ♡</span></footer></main><dialog id="how"><h2>Welcome to the neighborhood</h2><p>Choose Play Online to join Town 001. Move with WASD, arrow keys, or the on-screen arrows. Right-drag to rotate and scroll to zoom. Touch users can drag the scene to rotate.</p><p>This milestone supports two guests. Server-controlled movement keeps you inside the map and outside buildings. You can see nearby connected guests move in real time.</p><p>If your connection drops, your spot is held for 15 seconds. Return with this browser to reconnect. A new tab with the same guest replaces the previous connection.</p><p>Choose Walk to my café to travel to your door and enter. Open the café, prepare waiting orders, then serve ready coffee. Your character walks to the correct station automatically. Manual movement cancels an interaction. Customers pay after drinking. Coins, supplies, cats and upgrades are saved by the server. Neighbors can visit but cannot manage your café. The original offline practice save remains separate.</p><button id="close-help" class="primary">Let's explore</button></dialog>`;
 let world: World | null = null;
 let available = true;
 try {
@@ -53,9 +54,17 @@ function roster(snapshot: PublicState) {
     ul.append(li);
   }
 }
+let cafePanel: CafePanel | undefined;
 const network = new Network({
+  personal(cafe) {
+    cafePanel?.update(cafe);
+  },
+  result(result) {
+    cafePanel?.result(result);
+  },
   status(s, message) {
     connection = s;
+    if (s !== "connected") cafePanel?.disconnected();
     $("#connection-text").textContent = message;
     $("#dot").className = `dot ${s}`;
     $("#overlay").hidden = s === "connected";
@@ -90,13 +99,21 @@ const network = new Network({
       : "Guest profile saved. Your first stroll awaits.";
   },
   snapshot(s) {
+    $("#app").dataset.area =
+      s.players.find((p) => p.id === selfId)?.area ?? "town";
     world?.snapshot(s);
+    cafePanel?.state(s);
     if (connection === "connected") {
       $("#count").textContent = String(s.connected);
       roster(s);
     }
   },
 });
+cafePanel = new CafePanel(
+  $("#cafe-controls"),
+  () => selfId,
+  (action, target) => network.action(action, target),
+);
 const keys = new Set<string>(),
   touch = new Set<string>();
 const controls = [

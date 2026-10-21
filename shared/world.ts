@@ -62,3 +62,8 @@ export function move(
   }
   return { x, z };
 }
+
+export function doorway(lot: number) {
+  const b = BUILDINGS[lot];
+  return { x: b.x, z: b.z + (b.z < 0 ? 5.5 : -5.5) };
+}

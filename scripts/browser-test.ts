@@ -202,7 +202,7 @@ try {
   assert.equal(await pages[0].locator("#money").textContent(), "65");
   await pages[0].locator("#food").click();
   assert.equal(await pages[0].locator("#money").textContent(), "50");
-  await pages[0].reload();
+  await pages[0].reload({ waitUntil: "domcontentloaded" });
   await pages[0].locator("canvas").waitFor();
   assert.equal(await pages[0].locator("#money").textContent(), "50");
   assert.ok(

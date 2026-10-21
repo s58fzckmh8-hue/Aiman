@@ -1,4 +1,12 @@
 import * as THREE from "three";
+import {
+  TABLES,
+  SERVICE_POINTS,
+  ENTRY,
+  type CafeView,
+  type Order,
+} from "../../shared/cafe.ts";
+import { route, type Point } from "../../shared/navigation.ts";
 import { BUILDINGS } from "../../shared/world.ts";
 import type { PlayerState, PublicState } from "../../shared/protocol.ts";
 type Sample = { time: number; state: PlayerState };
@@ -13,6 +21,14 @@ type Avatar = {
 export class World {
   private renderer: THREE.WebGLRenderer;
   private scene = new THREE.Scene();
+  private environment = new THREE.Group();
+  private area = "town";
+  private decoration = 1;
+  private cats = new Map<string, THREE.Group>();
+  private customers = new Map<
+    string,
+    { group: THREE.Group; path: Point[]; leaving: boolean }
+  >();
   private camera = new THREE.PerspectiveCamera(45, 1, 0.1, 240);
   private target = new THREE.Vector3(0, 0, 1);
   private avatars = new Map<string, Avatar>();
@@ -21,6 +37,7 @@ export class World {
   private ball = new THREE.SphereGeometry(1, 12, 8);
   private labels: THREE.Sprite[] = [];
   private frame = 0;
+  private lastDraw = performance.now();
   private observer: ResizeObserver;
   private angle = Math.PI / 5;
   private zoom = 24;
@@ -57,6 +74,7 @@ export class World {
     sun.shadow.normalBias = 0.06;
     this.scene.add(sun);
     this.scene.add(sun.target);
+    this.scene.add(this.environment);
     this.buildTown();
     this.observer = new ResizeObserver(() => this.resize());
     this.observer.observe(host);
@@ -87,7 +105,7 @@ export class World {
     sx: number,
     sy: number,
     sz: number,
-    parent: THREE.Object3D = this.scene,
+    parent: THREE.Object3D = this.environment,
   ) {
     const m = new THREE.Mesh(g, this.material(color));
     m.position.set(x, y, z);
@@ -168,7 +186,7 @@ export class World {
         3,
       );
       sign.position.set(b.x, 5.2, b.z);
-      this.scene.add(sign);
+      this.environment.add(sign);
       this.labels.push(sign);
     }
     // Low ground-cover decoration has no solid collision; all buildings use shared authoritative footprints.
@@ -203,7 +221,173 @@ export class World {
     this.avatars.set(p.id, a);
     return a;
   }
+  private clearEnvironment() {
+    this.environment.clear();
+    for (const label of this.labels) {
+      label.material.map?.dispose();
+      label.material.dispose();
+    }
+    this.labels = [];
+    this.cats.clear();
+    this.customers.clear();
+  }
+  private buildRoom(cafe: CafeView) {
+    this.cube(0xe7ceaa, 0, -0.1, 0, 12, 0.2, 10);
+    for (let z = -4.8; z < 5; z += 0.8)
+      this.cube(0xd9ba92, 0, 0.012, z, 12, 0.025, 0.025);
+    this.cube(0xf3e8cf, 0, 1.7, -5, 12, 3.4, 0.18);
+    this.cube(0xdce2cb, -6, 1.7, 0, 0.18, 3.4, 10);
+    this.cube(0x8caa9b, 1.5, 2, -4.86, 3.8, 1.7, 0.1);
+    this.cube(0xfaf1d7, 1.5, 2, -4.76, 0.09, 1.7, 0.07);
+    this.cube(0xfaf1d7, 1.5, 2, -4.76, 3.8, 0.08, 0.07);
+    this.cube(0xb2916b, -3.5, 0.65, -3.8, 3.8, 1.3, 1.5);
+    this.cube(0xf0ddba, -3.5, 1.32, -3.8, 4, 0.12, 1.65);
+    this.cube(0x456c5c, -3.7, 1.75, -3.8, 0.9, 0.8, 0.65);
+    this.cube(0x343d38, -3.7, 1.85, -3.43, 0.65, 0.3, 0.04);
+    const label = this.sign(cafe.ownerName + "’s café", "#3a5d48", 4);
+    label.position.set(-1, 3.3, -4.7);
+    this.environment.add(label);
+    this.labels.push(label);
+    for (const t of TABLES) {
+      this.cube(0xb88f66, t.x, 0.48, 0.3, 0.2, 0.9, 0.2);
+      this.cube(0xd6b180, t.x, 0.98, 0.3, 1.6, 0.12, 1.5);
+      for (const z of [-0.85, 1.35]) {
+        this.cube(0x789582, t.x, 0.5, z, 0.7, 0.15, 0.7);
+        this.cube(
+          0x789582,
+          t.x,
+          0.85,
+          z + (z < 0 ? -0.3 : 0.3),
+          0.7,
+          0.75,
+          0.1,
+        );
+      }
+    }
+    this.mesh(this.ball, 0xcbd5b1, 4, 0.07, 0.2, 1.7, 0.13, 3.5);
+    this.cube(0xb99b76, 4, 0.13, -2.5, 1.7, 0.3, 1.4);
+    this.cube(0xe9d6b5, 4, 0.32, -2.5, 1.5, 0.18, 1.2);
+    this.cube(0x9da991, 4.8, 0.1, 2, 0.5, 0.2, 0.5);
+    this.mesh(this.ball, 0x8aabaf, 4.8, 0.23, 2, 0.23, 0.07, 0.23);
+    this.cube(0xb8a182, 5, 0.8, -0.8, 0.2, 1.6, 0.2);
+    this.cube(0xd9c8a9, 5, 1.65, -0.8, 1, 0.15, 1);
+    this.cube(0xaab58d, 0, 0.025, 4.35, 2, 0.04, 0.85);
+    if (cafe.level >= 2) {
+      for (const x of [-5, 5]) {
+        this.cube(0xc2926c, x, 0.2, 3.5, 0.5, 0.4, 0.5);
+        this.mesh(this.ball, 0x789e6c, x, 0.85, 3.5, 0.5, 0.7, 0.5);
+      }
+    }
+    if (cafe.level >= 3) {
+      this.cube(0xe8bd9e, 2.5, 0.1, 3, 2, 0.15, 1.5);
+      const sign = this.sign("A little coffee. A lot of cats.", "#688256", 3);
+      sign.position.set(3, 3.1, -4.6);
+      this.environment.add(sign);
+      this.labels.push(sign);
+    }
+    this.decoration = cafe.level;
+  }
+  private catModel(coat: number) {
+    const g = new THREE.Group();
+    this.environment.add(g);
+    const color = [0xdba255, 0xeee5d5, 0x89988b][coat % 3];
+    this.mesh(this.ball, color, 0, 0.3, 0, 0.35, 0.25, 0.57, g);
+    this.mesh(this.ball, color, 0, 0.65, 0.38, 0.3, 0.28, 0.28, g);
+    for (const x of [-0.2, 0.2]) {
+      const ear = this.cube(color, x, 0.91, 0.37, 0.16, 0.28, 0.16, g);
+      ear.rotation.z = x < 0 ? 0.3 : -0.3;
+      this.mesh(
+        this.ball,
+        0x4f6546,
+        x * 0.6,
+        0.7,
+        0.62,
+        0.035,
+        0.045,
+        0.025,
+        g,
+      );
+      this.cube(color, x, 0.14, 0.25, 0.12, 0.28, 0.12, g);
+    }
+    const tail = this.cube(color, 0.2, 0.5, -0.6, 0.13, 0.13, 0.65, g);
+    tail.rotation.y = 0.4;
+    return g;
+  }
+  private roomEntities(cafe: CafeView, now: number) {
+    const liveCats = new Set(cafe.cats.map((c) => c.id));
+    for (const [id, g] of this.cats)
+      if (!liveCats.has(id)) {
+        g.removeFromParent();
+        this.cats.delete(id);
+      }
+    for (const [i, c] of cafe.cats.entries()) {
+      let g = this.cats.get(c.id);
+      if (!g) {
+        g = this.catModel(c.coat);
+        g.position.set(3.4 + (i % 2) * 1.1, 0, -0.8 + i * 1.3);
+        g.rotation.y = -0.7;
+        this.cats.set(c.id, g);
+      }
+    }
+    const active = new Set(cafe.orders.map((o) => o.id));
+    for (const [id, customer] of this.customers)
+      if (!active.has(id) && !customer.leaving) {
+        customer.leaving = true;
+        try {
+          customer.path = route(
+            { x: customer.group.position.x, z: customer.group.position.z },
+            ENTRY,
+            true,
+          );
+        } catch {
+          customer.path = [ENTRY];
+        }
+      }
+    for (const order of cafe.orders) {
+      let customer = this.customers.get(order.id);
+      if (!customer) {
+        const group = new THREE.Group();
+        this.environment.add(group);
+        this.cube(0xbf9380, 0, 0.9, 0, 0.52, 0.7, 0.38, group);
+        this.mesh(this.ball, 0xe5b58a, 0, 1.5, 0, 0.28, 0.3, 0.27, group);
+        this.mesh(this.ball, 0x72543e, 0, 1.68, -0.02, 0.29, 0.17, 0.28, group);
+        for (const x of [-0.15, 0.15])
+          this.cube(0x666f68, x, 0.3, 0, 0.18, 0.5, 0.2, group);
+        const target = TABLES[order.seat];
+        const path = [
+          ...route(ENTRY, SERVICE_POINTS[order.seat], true),
+          target,
+        ];
+        if (now - order.createdAt > 4000) {
+          group.position.set(target.x, 0, target.z);
+          customer = { group, path: [], leaving: false };
+        } else {
+          group.position.set(ENTRY.x, 0, ENTRY.z);
+          customer = { group, path, leaving: false };
+        }
+        this.customers.set(order.id, customer);
+      }
+      customer.group.userData.status = order.status;
+    }
+  }
   snapshot(s: PublicState) {
+    const self = s.players.find((p) => p.id === this.selfId),
+      area = self?.area ?? "town";
+    if (area !== this.area || (s.cafe && s.cafe.level !== this.decoration)) {
+      const changed = area !== this.area;
+      this.clearEnvironment();
+      this.area = area;
+      if (area === "town") this.buildTown();
+      else if (s.cafe) this.buildRoom(s.cafe);
+      if (changed) {
+        for (const a of this.avatars.values()) this.disposeAvatar(a);
+        this.avatars.clear();
+        if (self) this.target.set(self.x, 0, self.z);
+        this.zoom = area === "town" ? 24 : 13;
+      }
+    }
+    if (s.cafe) this.roomEntities(s.cafe, s.time);
+
     const now = performance.now();
     const seen = new Set<string>();
     for (const p of s.players) {
@@ -252,7 +436,7 @@ export class World {
   };
   resetCamera() {
     this.angle = Math.PI / 5;
-    this.zoom = 24;
+    this.zoom = this.area === "town" ? 24 : 13;
   }
   direction(x: number, z: number) {
     return {
@@ -265,6 +449,32 @@ export class World {
     this.frame = requestAnimationFrame(this.draw);
     const now = performance.now(),
       viewTime = now - 110;
+    const deltaDraw = Math.min(0.1, (now - this.lastDraw) / 1000);
+    this.lastDraw = now;
+    for (const [id, c] of this.customers) {
+      const target = c.path[0];
+      if (target) {
+        const dx = target.x - c.group.position.x,
+          dz = target.z - c.group.position.z,
+          d = Math.hypot(dx, dz);
+        if (d < 0.08) c.path.shift();
+        else {
+          const stride = Math.min(d, 2 * deltaDraw);
+          c.group.position.x += (dx / d) * stride;
+          c.group.position.z += (dz / d) * stride;
+          c.group.rotation.y = Math.atan2(dx, dz);
+        }
+      } else if (c.leaving) {
+        c.group.removeFromParent();
+        this.customers.delete(id);
+      }
+    }
+    for (const [id, g] of this.cats) {
+      g.rotation.z = this.motion
+        ? 0
+        : Math.sin(now * 0.002 + id.length) * 0.025;
+    }
+
     for (const [id, a] of this.avatars) {
       if (!a.samples.length) continue;
       let from = a.samples[0],

@@ -1,4 +1,25 @@
-# Milestone 1 validation
+# Validation ledger
+
+## V0.3 — online café slice
+
+Validated in the same Node 24 / Linux Chromium environment. Tests use temporary server databases and isolated guest cookies.
+
+- Original offline model tests: 3 passed.
+- Online unit/integration tests: 19 passed, including the original nine, ownership/private entry, complete order/payment lifecycle, purchase idempotency, insufficient funds, unique cats/capacity, decoration limits, database restart/refunds, café isolation, no passive income, pathfinding around furniture and rollback after an injected DB failure following a debit, and slow-connection handling that reconnects rather than silently dropping transaction acknowledgements, and separation of client request IDs from automatic server-payment IDs.
+- Café browser test: two actual browser guests join, the owner walks to and enters a 3D café, a visitor walks into the same café, both appear together, the owner prepares and serves a coffee, and only the owner's wallet is credited. Cat food consumption, decoration purchase, reload persistence, mobile overflow and walking back to town pass with no JavaScript errors.
+- Production build and production smoke test pass. Separate online and offline entries work; the preserved Phaser bundle and Three.js entry retain Vite's size advisory.
+- Original two-client movement/reconnect/offline regression suite passed after the new area and action protocol integration.
+
+During test development, a maximum-upgrade fixture ran out of its 12 starter beans. It was corrected to buy supplies and earn the additional required currency through actual order completions. No gameplay assertion was disabled. The legacy browser reload check timed out waiting for the broad page `load` event on the software-rendering cloud browser; it now waits for DOM readiness and verifies the actual canvas, serving/feeding behavior and restored balance.
+
+New screenshots: `test-results/cafe-online-desktop.png` and `test-results/cafe-online-mobile.png`; a recorded desktop example is committed in `docs/images/online-cafe.png`.
+
+This remains a **partially implemented master spec**. No new 5/10/20-player, physical-device, Firefox/Safari, long-duration soak or hosted Internet/CrazyGames test has been performed. Customer path presentation is not the full future NPC lifecycle; cats do not yet have full needs/AI/genetics. No free build mode, functional town shops, employees, quests, account linking or ads are claimed. PostgreSQL was replaced by transactional SQLite for this single-process local slice; multi-process coordination and production scaling remain unimplemented.
+
+
+---
+
+## V0.2 — historical multiplayer foundation
 
 Validated on 21 October 2026 in the cloud workspace, Node.js v24.19.0, Linux Chromium headless. This is current-instance validation, not proof of a published/hosted service or physical mobile device compatibility.
 
@@ -45,3 +66,5 @@ Next implementation increment: functional building entrances and café ownership
 ## Windows startup follow-up
 
 A user's Windows run installed dependencies successfully but could not start Vite because port 5173 was already occupied. The old launcher also emitted Node DEP0190 because it used a shell to run npm.cmd. The launcher now starts the Node executables directly, supports `--port` and `--server-port`, and synchronizes the proxy and default allowed origins. Windows cleanup targets only its own child process trees. Type checking and the production build pass. A real development launch on 5174/3002 passed proxied health, guest cookie authentication and a WebSocket welcome. Native Windows process-tree cleanup remains untested in this Linux workspace; the user's Windows startup is the next platform check.
+
+

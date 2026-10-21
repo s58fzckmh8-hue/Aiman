@@ -147,3 +147,17 @@ test("interest management excludes distant players but preserves real global cou
   assert.equal(state.players.length, 1);
   assert.equal(state.connected, 2);
 });
+
+test("backpressure closes a slow socket instead of silently losing action replies", () => {
+  const town = new Town();
+  const a = socket();
+  a.raw.bufferedAmount = 128001;
+  town.send(a.ws, {
+    type: "result",
+    requestId: "test-request",
+    ok: true,
+    message: "Purchase saved.",
+  });
+  assert.equal(a.raw.code, 1013);
+  assert.equal(a.messages.length, 0);
+});

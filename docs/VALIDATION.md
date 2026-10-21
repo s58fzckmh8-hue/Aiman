@@ -66,5 +66,3 @@ Next implementation increment: functional building entrances and café ownership
 ## Windows startup follow-up
 
 A user's Windows run installed dependencies successfully but could not start Vite because port 5173 was already occupied. The old launcher also emitted Node DEP0190 because it used a shell to run npm.cmd. The launcher now starts the Node executables directly, supports `--port` and `--server-port`, and synchronizes the proxy and default allowed origins. Windows cleanup targets only its own child process trees. Type checking and the production build pass. A real development launch on 5174/3002 passed proxied health, guest cookie authentication and a WebSocket welcome. Native Windows process-tree cleanup remains untested in this Linux workspace; the user's Windows startup is the next platform check.
-
-

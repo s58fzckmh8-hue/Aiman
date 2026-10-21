@@ -75,6 +75,7 @@ test("complete order lifecycle consumes one bean and credits exactly one payment
     assert.throws(() => s.serve("a", "serve-tooearly", id, 2000), /not ready/);
     s.advance(c.id, 5001);
     assert.equal(s.orders(c.id)[0].status, "READY");
+    s.pickup("a", "pickup-1", id);
     s.serve("a", "serve-1", id, 5100);
     s.serve("a", "serve-1", id, 5100);
     assert.equal(s.byOwner("a").coins, 150);
@@ -218,6 +219,7 @@ test("three unique cats and maximum decorations enforce capacity before charging
         id = s.createOrder(c.id, time)!;
       s.prepare("a", "prepare-" + n, id, time);
       s.advance(c.id, time + 4001);
+      s.pickup("a", "pickup-" + n, id);
       s.serve("a", "serve-" + n, id, time + 4100);
       s.advance(c.id, time + 7101);
     };
@@ -253,6 +255,7 @@ test("a client cannot poison the automatic payment transaction namespace", () =>
     s.purchase("a", "payment:" + id, "food");
     s.prepare("a", "prepare-1", id, 1000);
     s.advance(c.id, 5001);
+    s.pickup("a", "pickup-1", id);
     s.serve("a", "serve-1", id, 5100);
     s.advance(c.id, 8101);
     s.advance(c.id, 8200);

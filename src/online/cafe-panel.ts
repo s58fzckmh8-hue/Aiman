@@ -1,3 +1,4 @@
+import { CAT_DESIGNS } from "../../shared/cat-designs.ts";
 import type {
   Action,
   ActionResult,
@@ -30,6 +31,12 @@ export class CafePanel {
       );
       if (id) {
         this.pending = true;
+        if (
+          ["open", "walkHome", "visit", "exit"].includes(b.dataset.action ?? "")
+        )
+          document
+            .querySelector("#world")
+            ?.scrollIntoView({ block: "center", behavior: "smooth" });
         this.message = "Getting things ready…";
         this.draw();
       }
@@ -145,6 +152,11 @@ export class CafePanel {
     );
     this.text("p", `Coffee beans: ${c.beans} · Cat food: ${c.food}`, this.host);
     this.text("h2", "Customer orders", this.host);
+    this.text(
+      "p",
+      "Walk to the machine and hold it or E to brew. Click it to pick up ready coffee, then click the matching customer nearby.",
+      this.host,
+    );
     const orders = s.cafe?.orders ?? [];
     if (!orders.length)
       this.text(
@@ -165,16 +177,13 @@ export class CafePanel {
           WAITING: "Waiting for coffee",
           PREPARING: "Brewing · 4 seconds",
           READY: "Ready to serve",
+          CARRIED: "Coffee being carried to the table",
           DRINKING: "Enjoying coffee · payment shortly",
           PAID: "Paid",
           CANCELLED: "Cancelled",
         }[o.status],
         row,
       );
-      if (o.status === "WAITING")
-        row.append(this.button("Prepare coffee →", "prepare", o.id, !c.beans));
-      if (o.status === "READY")
-        row.append(this.button("Serve coffee →", "serve", o.id));
       this.host.append(row);
     }
     this.text("h2", "Your furry family", this.host);
@@ -204,18 +213,26 @@ export class CafePanel {
         c.coins < 80 * c.level || c.level >= 3,
       ),
       this.button(
-        `Adopt cat · ${100 * c.cats.length} coins`,
-        "adopt",
-        undefined,
-        c.coins < 100 * c.cats.length || c.cats.length >= 3,
-      ),
-      this.button(
         c.visitors
           ? "Visitors: welcome · make private"
           : "Visitors: private · open access",
         "privacy",
       ),
     );
+    const adoption = document.createElement("details");
+    const adoptionSummary = document.createElement("summary");
+    adoptionSummary.textContent = `Adopt a cat · ${c.cats.length}/3 slots · ${100 * c.cats.length} coins`;
+    adoption.append(adoptionSummary);
+    for (const [i, design] of CAT_DESIGNS.entries())
+      adoption.append(
+        this.button(
+          design.name,
+          "adopt",
+          String(i),
+          c.coins < 100 * c.cats.length || c.cats.length >= 3,
+        ),
+      );
+    details.append(adoption);
     this.host.append(details);
     this.text(
       "p",

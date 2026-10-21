@@ -1,5 +1,21 @@
 # Validation ledger
 
+## V0.4 — physical service and local CC0 artwork
+
+Validated in Node 24 / Linux Chromium with isolated guest cookies and temporary databases.
+
+- `npm test`: 3 passed. `npm run test:online`: 24 passed, including five new work/proximity/refund/coat-selection checks. No failures or skips.
+- `npm run typecheck`, `npm run test:assets` and production build passed. Nine immutable-source CC0 models match recorded SHA-256 hashes, have embedded resources and total 410,960 bytes. Vite's engine bundle-size advisory remains.
+- Actual pointer café browser test passed: two real guests share an interior; a machine click walks the owner over; an early mouse release resets/refunds; a continuous hold produces coffee; pickup, walking and nearby delivery pay only the owner. The panel has no Prepare/Serve buttons.
+- Emulated touch starts and cancels actual server work, then keyboard E completes the full hold. Touch pickup/walking/delivery, calico adoption, reload persistence, food, upgrades, mobile overflow and exit all passed without JavaScript errors. This is Chromium touch emulation, not a physical phone test.
+- Production online backend connection and offline serving smoke test passed. Screenshots are generated under `test-results/`; the desktop café image is copied to `docs/images/online-cafe.png`.
+
+Initial touch tests did not synchronize cancellation with the rendered client state and could press E before the prior interaction had settled. The test now requires actual server work to start, checks cancellation and the client progress state before keyboard input, and uses Playwright's supported touchscreen tap. Canvas focus uses `preventScroll` so a touch does not move the page under the interaction target. No assertion was removed.
+
+The legacy combined browser run initially reached its 30-second offline canvas deadline with no JavaScript errors; diagnostics then showed a correctly sized visible canvas. Offline serving passed in isolation and in the production smoke test. The combined test now explicitly brings the practice page forward and gives software-rendered Phaser startup 60 seconds while retaining the serving/feeding/save assertions. The full rerun passed, including movement, reconnect, duplicate-session replacement, departure, mobile controls and offline serving/feeding/save.
+
+The master spec remains incomplete: two guests, three cat slots, one drink recipe and fixed furniture layouts. No physical-device/CrazyGames/public-hosting or expanded-player load test is claimed.
+
 ## V0.3 — online café slice
 
 Validated in the same Node 24 / Linux Chromium environment. Tests use temporary server databases and isolated guest cookies.

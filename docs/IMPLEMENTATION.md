@@ -1,5 +1,11 @@
 # Kafe Miaw implementation ledger
 
+## V0.4 — physical café interaction and curated artwork
+
+The coffee sidebar now displays orders and manages the business; it cannot prepare or serve drinks. Click the floor to send an authoritative walking route. Click the machine to approach, then hold it (or hold E nearby) for four continuous seconds. Server-timed work requires fresh heartbeats and proximity. Release, movement, disconnection or a missed heartbeat cancels the work and refunds its bean exactly once. A ready coffee must be picked up at the machine, carried, and delivered near its matching customer. Visitors cannot operate the owner's machine or economy.
+
+Nine pinned CC0 GLB assets provide an animated Kenney character and KayKit buildings/furniture. All files and licenses ship locally; sources, conversion and checksums are in `public/assets/manifest.json` and `docs/ASSETS.md`. Cats use original geometry with eight selectable coat designs, preserving existing saved coat indices and three ownership slots. This does not implement breeding, a new account system or expanded multiplayer capacity.
+
 ## Audit and decision
 
 Baseline commit: 8ded0e4. Vite 6 / Phaser 3, no Three.js, backend, identity, network protocol or durable online data. Existing features: 60-second café shifts; customer patience; payment; cat care; adoption and decoration upgrades; localStorage recovery; responsive UI. Three model tests passed; baseline production build passes with a large Phaser bundle warning. All graphics are original code primitives; Google fonts were optional external assets. The existing UI was Malay.

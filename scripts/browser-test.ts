@@ -193,17 +193,20 @@ try {
   console.log(
     "PASS: online two-client movement, reconnect, duplicate session, departure, mobile controls",
   );
+  await pages[0].bringToFront();
   await pages[0].goto(origin + "/practice.html", {
     waitUntil: "domcontentloaded",
   });
-  await pages[0].locator("canvas").waitFor();
+  // Phaser can initialize slowly after the software-rendered multiplayer scenes.
+  await pages[0].locator("canvas").waitFor({ timeout: 60000 });
   await pages[0].locator("#open").click();
   await pages[0].locator("#service").click();
   assert.equal(await pages[0].locator("#money").textContent(), "65");
   await pages[0].locator("#food").click();
   assert.equal(await pages[0].locator("#money").textContent(), "50");
   await pages[0].reload({ waitUntil: "domcontentloaded" });
-  await pages[0].locator("canvas").waitFor();
+  // Phaser can initialize slowly after the software-rendered multiplayer scenes.
+  await pages[0].locator("canvas").waitFor({ timeout: 60000 });
   assert.equal(await pages[0].locator("#money").textContent(), "50");
   assert.ok(
     (await pages[0].locator("body").innerText()).includes("Offline practice"),

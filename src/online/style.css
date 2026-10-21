@@ -574,3 +574,44 @@ dialog h2 {
     top: 20px;
   }
 }
+.world-prompt {
+  position: absolute;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: 62%;
+  padding: 11px 15px;
+  border: 1px solid #f7f7eacc;
+  border-radius: 12px;
+  background: #fffdf0e8;
+  font-size: 11px;
+  color: #536b4c;
+  box-shadow: 0 4px 18px #38503912;
+  pointer-events: none;
+}
+.brew-progress {
+  height: 7px;
+  background: #dce5ce;
+  border-radius: 20px;
+  overflow: hidden;
+  margin-top: 9px;
+}
+.brew-progress i {
+  display: block;
+  height: 100%;
+  width: var(--progress, 0%);
+  background: #72966b;
+  transition: width 0.1s linear;
+}
+#world canvas {
+  cursor: crosshair;
+}
+@media (max-width: 760px) {
+  .world-prompt {
+    bottom: auto;
+    top: 12px;
+    max-width: 90%;
+    width: max-content;
+    font-size: 10px;
+  }
+}

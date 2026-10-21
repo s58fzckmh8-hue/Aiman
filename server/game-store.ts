@@ -1,3 +1,4 @@
+import { CAT_DESIGNS } from "../shared/cat-designs.ts";
 import { DatabaseSync } from "node:sqlite";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
@@ -157,47 +158,67 @@ export class GameStore {
       return message;
     });
   }
-  purchase(ownerId: string, requestId: string, item: keyof typeof CATALOG) {
-    return this.transaction(ownerId, requestId, item, "PURCHASE", (c) => {
-      const entry = CATALOG[item];
-      const cost =
-        entry.price *
-        (item === "decor" ? c.level : item === "adopt" ? c.cats.length : 1);
-      if (item === "decor" && c.level >= 3)
-        throw Error("Your café is already fully decorated.");
-      if (item === "adopt" && c.cats.length >= 3)
-        throw Error("Your cat home is full.");
-      if (c.coins < cost) throw Error("Not enough PawCoins.");
-      if (
-        (item === "beans" && c.beans > 90) ||
-        (item === "food" && c.food > 27)
-      )
-        throw Error("Your supply storage is full.");
-      this.db
-        .prepare("UPDATE cafes SET coins=coins-? WHERE id=?")
-        .run(cost, c.id);
-      if (item === "beans")
-        this.db.prepare("UPDATE cafes SET beans=beans+10 WHERE id=?").run(c.id);
-      if (item === "food")
-        this.db.prepare("UPDATE cafes SET food=food+3 WHERE id=?").run(c.id);
-      if (item === "decor")
-        this.db.prepare("UPDATE cafes SET level=level+1 WHERE id=?").run(c.id);
-      if (item === "adopt")
+  purchase(
+    ownerId: string,
+    requestId: string,
+    item: keyof typeof CATALOG,
+    coat?: number,
+  ) {
+    return this.transaction(
+      ownerId,
+      requestId,
+      item + (coat === undefined ? "" : ":" + coat),
+      "PURCHASE",
+      (c) => {
+        if (
+          coat !== undefined &&
+          (!Number.isInteger(coat) || coat < 0 || coat >= CAT_DESIGNS.length)
+        )
+          throw Error("Choose an available cat design.");
+        const entry = CATALOG[item];
+        const cost =
+          entry.price *
+          (item === "decor" ? c.level : item === "adopt" ? c.cats.length : 1);
+        if (item === "decor" && c.level >= 3)
+          throw Error("Your café is already fully decorated.");
+        if (item === "adopt" && c.cats.length >= 3)
+          throw Error("Your cat home is full.");
+        if (c.coins < cost) throw Error("Not enough PawCoins.");
+        if (
+          (item === "beans" && c.beans > 90) ||
+          (item === "food" && c.food > 27)
+        )
+          throw Error("Your supply storage is full.");
         this.db
-          .prepare("INSERT INTO cats VALUES (?,?,?,?,?)")
-          .run(
-            randomUUID(),
-            c.id,
-            ["Oyen", "Mochi", "Luna"][c.cats.length],
-            c.cats.length,
-            80,
-          );
-      return item === "adopt"
-        ? "Your new cat has arrived!"
-        : item === "decor"
-          ? "Your café has a fresh new look!"
-          : "Supplies delivered to your café.";
-    });
+          .prepare("UPDATE cafes SET coins=coins-? WHERE id=?")
+          .run(cost, c.id);
+        if (item === "beans")
+          this.db
+            .prepare("UPDATE cafes SET beans=beans+10 WHERE id=?")
+            .run(c.id);
+        if (item === "food")
+          this.db.prepare("UPDATE cafes SET food=food+3 WHERE id=?").run(c.id);
+        if (item === "decor")
+          this.db
+            .prepare("UPDATE cafes SET level=level+1 WHERE id=?")
+            .run(c.id);
+        if (item === "adopt")
+          this.db
+            .prepare("INSERT INTO cats VALUES (?,?,?,?,?)")
+            .run(
+              randomUUID(),
+              c.id,
+              CAT_DESIGNS[coat ?? c.cats.length].defaultName,
+              coat ?? c.cats.length,
+              80,
+            );
+        return item === "adopt"
+          ? "Your new cat has arrived!"
+          : item === "decor"
+            ? "Your café has a fresh new look!"
+            : "Supplies delivered to your café.";
+      },
+    );
   }
   care(ownerId: string, requestId: string, feed: boolean) {
     return this.transaction(
@@ -255,6 +276,39 @@ export class GameStore {
       },
     );
   }
+  interruptPreparation(ownerId: string, orderId: string) {
+    return this.atomic(() => {
+      const c = this.byOwner(ownerId),
+        o = this.orders(c.id).find((o) => o.id === orderId);
+      if (!o || o.status !== "PREPARING") return;
+      if (o.consumed)
+        this.db.prepare("UPDATE cafes SET beans=beans+1 WHERE id=?").run(c.id);
+      this.db
+        .prepare(
+          "UPDATE orders SET status='WAITING',consumed=0,ready_at=0 WHERE id=?",
+        )
+        .run(o.id);
+    });
+  }
+  pickup(ownerId: string, requestId: string, orderId: string) {
+    return this.transaction(
+      ownerId,
+      requestId,
+      "pickup:" + orderId,
+      "PICKUP",
+      (c) => {
+        const o = this.orders(c.id).find((o) => o.id === orderId);
+        if (!o || o.status !== "READY")
+          throw Error("This coffee is not ready to pick up.");
+        if (this.orders(c.id).some((o) => o.status === "CARRIED"))
+          throw Error("You are already carrying a coffee.");
+        this.db
+          .prepare("UPDATE orders SET status='CARRIED' WHERE id=?")
+          .run(o.id);
+        return "Coffee picked up. Walk to the matching customer.";
+      },
+    );
+  }
   serve(ownerId: string, requestId: string, orderId: string, now: number) {
     return this.transaction(
       ownerId,
@@ -263,8 +317,8 @@ export class GameStore {
       "DELIVERY",
       (c) => {
         const order = this.orders(c.id).find((o) => o.id === orderId);
-        if (!order || order.status !== "READY")
-          throw Error("This coffee is not ready to serve.");
+        if (!order || order.status !== "CARRIED")
+          throw Error("This coffee is not ready to serve. Pick it up first.");
         this.db
           .prepare("UPDATE orders SET status='DRINKING',paid_at=? WHERE id=?")
           .run(now + 3000, orderId);

@@ -27,6 +27,7 @@ export type OrderStatus =
   | "WAITING"
   | "PREPARING"
   | "READY"
+  | "CARRIED"
   | "DRINKING"
   | "PAID"
   | "CANCELLED";
@@ -81,6 +82,10 @@ export type Action = {
   type: "action";
   requestId: string;
   action:
+    | "walk"
+    | "approach"
+    | "workStart"
+    | "pickup"
     | "walkHome"
     | "visit"
     | "enter"

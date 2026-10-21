@@ -2,11 +2,11 @@ import { randomUUID } from "node:crypto";
 import { WebSocket } from "ws";
 import { step } from "../shared/navigation.ts";
 import type { Point } from "../shared/navigation.ts";
-import { Cafes } from "./cafes.ts";
+import { Cafes, type Actor } from "./cafes.ts";
 import type { Action } from "../shared/cafe.ts";
 import type { PlayerState } from "../shared/protocol.ts";
 import type { Profile } from "./profiles.ts";
-type Resident = {
+type Resident = Actor & {
   state: PlayerState;
   socket: WebSocket | null;
   input: { x: number; z: number; seq: number; at: number };
@@ -113,6 +113,8 @@ export class Town {
   disconnect(id: string, ws: WebSocket, now = Date.now()) {
     const r = this.residents.get(id);
     if (!r || r.socket !== ws) return;
+    this.cafes?.cancelWork(r);
+    r.state.carriedOrderId = undefined;
     this.cafes?.disconnect(id);
     r.pending = undefined;
     r.path = [];
@@ -142,6 +144,29 @@ export class Town {
       ws.close(1008, "Invalid message");
       return;
     }
+    if (msg?.type === "work" && this.cafes) {
+      if (
+        typeof msg.id !== "string" ||
+        !/^[a-zA-Z0-9:_-]{8,100}$/.test(msg.id) ||
+        !["pulse", "stop"].includes(msg.phase) ||
+        Object.keys(msg).some((k) => !["type", "id", "phase"].includes(k))
+      )
+        return;
+      if (r.work?.id !== msg.id) return;
+      if (msg.phase === "pulse") this.cafes.workPulse(r, msg.id, now);
+      else {
+        const stopped = this.cafes.cancelWork(r);
+        if (stopped)
+          this.send(ws, {
+            type: "result",
+            requestId: stopped.id,
+            ok: false,
+            message: stopped.message,
+          });
+        this.broadcast(now);
+      }
+      return;
+    }
     if (msg?.type === "action" && this.cafes) {
       if (
         typeof msg.requestId !== "string" ||
@@ -162,6 +187,16 @@ export class Town {
         });
       r.pending = undefined;
       r.path = [];
+      if (r.work) {
+        const stopped = this.cafes.cancelWork(r);
+        if (stopped)
+          this.send(ws, {
+            type: "result",
+            requestId: stopped.id,
+            ok: false,
+            message: stopped.message,
+          });
+      }
       this.execute(r, msg, now);
       return;
     }
@@ -187,6 +222,19 @@ export class Town {
       });
       r.pending = undefined;
       r.path = [];
+    }
+    if (msg.x !== 0 || msg.z !== 0) {
+      r.path = [];
+      if (r.work) {
+        const stopped = this.cafes?.cancelWork(r);
+        if (stopped)
+          this.send(ws, {
+            type: "result",
+            requestId: stopped.id,
+            ok: false,
+            message: stopped.message,
+          });
+      }
     }
     r.input = { x: msg.x, z: msg.z, seq: msg.seq, at: now };
   }
@@ -230,6 +278,14 @@ export class Town {
     this.expire(now);
     this.tickCount++;
     for (const r of this.residents.values()) {
+      const workResult = this.cafes?.workTick(r, now);
+      if (workResult && r.socket)
+        this.send(r.socket, {
+          type: "result",
+          requestId: workResult.id,
+          ok: workResult.ok,
+          message: workResult.message,
+        });
       const active = r.state.connected && now - r.input.at < 350;
       let x = active ? r.input.x : 0,
         z = active ? r.input.z : 0;
@@ -249,6 +305,9 @@ export class Town {
         z,
         dt,
         !!r.state.area && r.state.area !== "town",
+        this.cafes && r.state.area && r.state.area !== "town"
+          ? this.cafes.store.get(r.state.area).level
+          : 1,
       );
       r.state.moving = pos.x !== r.state.x || pos.z !== r.state.z;
       if (r.state.moving) r.state.rotation = Math.atan2(x, z);

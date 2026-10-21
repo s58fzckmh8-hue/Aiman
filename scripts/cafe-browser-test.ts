@@ -6,6 +6,7 @@ import { existsSync } from "node:fs";
 import { chromium, type Page } from "playwright";
 import { createServer } from "vite";
 import { createApp } from "../server/app.ts";
+import { STATION, SERVICE_POINTS } from "../shared/cafe.ts";
 const dir = await mkdtemp(join(tmpdir(), "miaw-cafe-browser-")),
   origin = "http://127.0.0.1:5196";
 const app = await createApp({
@@ -42,7 +43,10 @@ const browser = await chromium.launch({
     "--disable-renderer-backgrounding",
   ],
 });
-const a = await browser.newContext({ viewport: { width: 1366, height: 900 } }),
+const a = await browser.newContext({
+    viewport: { width: 1366, height: 900 },
+    hasTouch: true,
+  }),
   b = await browser.newContext({ viewport: { width: 1366, height: 900 } });
 const pa = await a.newPage(),
   pb = await b.newPage(),
@@ -92,10 +96,81 @@ try {
     "players not visible together inside",
   );
   await pa.locator('[data-action="open"]').click();
-  await pa.locator('[data-action="prepare"]').first().waitFor();
-  await pa.locator('[data-action="prepare"]').first().click();
-  await pa.locator('[data-action="serve"]').first().waitFor({ timeout: 25000 });
-  await pa.locator('[data-action="serve"]').first().click();
+  assert.equal(await pa.locator('[data-action="prepare"]').count(), 0);
+  assert.equal(await pa.locator('[data-action="serve"]').count(), 0);
+  const firstOrder = app.town.cafes!.store.orders(cafeId!)[0];
+  async function pointerTarget(kind: "machine" | "customer", target?: string) {
+    await pa.locator("#world").scrollIntoViewIfNeeded();
+    const canvas = pa.locator("#world canvas");
+    await wait(
+      async () => !!(await canvas.getAttribute("data-machine")),
+      "interaction projection",
+    );
+    const box = await canvas.boundingBox();
+    assert.ok(box);
+    const point = await canvas.evaluate(
+      (el, options) => {
+        const node = el as HTMLElement;
+        return options.kind === "machine"
+          ? JSON.parse(node.dataset.machine!)
+          : JSON.parse(node.dataset.customers ?? "[]").find(
+              (p: { id: string }) => p.id === options.target,
+            );
+      },
+      { kind, target },
+    );
+    assert.ok(point, "rendered interaction target missing");
+    return { x: box.x + point.x, y: box.y + point.y };
+  }
+  let point = await pointerTarget("machine");
+  await pa.mouse.click(point.x, point.y);
+  await wait(async () => {
+    const p = app.town.residents.get(aid)!.state;
+    return Math.hypot(p.x - STATION.x, p.z - STATION.z) < 1.4;
+  }, "clicking machine should walk to it");
+  await pa.waitForTimeout(300);
+  point = await pointerTarget("machine");
+  await pa.mouse.move(point.x, point.y);
+  await pa.mouse.down();
+  await pa.waitForTimeout(800);
+  await pa.mouse.up();
+  await wait(
+    async () =>
+      app.town.cafes!.store.orders(cafeId!)[0].status === "WAITING" &&
+      app.town.cafes!.store.byOwner(aid).beans === 12,
+    "early mouse release must refund and reset",
+  );
+  point = await pointerTarget("machine");
+  await pa.mouse.move(point.x, point.y);
+  await pa.mouse.down();
+  await pa.waitForTimeout(4600);
+  await pa.mouse.up();
+  await wait(
+    async () =>
+      app.town
+        .cafes!.store.orders(cafeId!)
+        .some((o) => o.id === firstOrder.id && o.status === "READY"),
+    "continuous mouse hold should finish coffee",
+  );
+  await pa.waitForTimeout(200);
+  point = await pointerTarget("machine");
+  await pa.mouse.click(point.x, point.y);
+  await wait(
+    async () =>
+      app.town.residents.get(aid)!.state.carriedOrderId === firstOrder.id,
+    "coffee pickup must be physical",
+  );
+  await pa.waitForTimeout(200);
+  point = await pointerTarget("customer", firstOrder.id);
+  await pa.mouse.click(point.x, point.y);
+  await wait(async () => {
+    const p = app.town.residents.get(aid)!.state,
+      t = SERVICE_POINTS[firstOrder.seat];
+    return Math.hypot(p.x - t.x, p.z - t.z) < 1.5;
+  }, "walking coffee to customer");
+  await pa.waitForTimeout(300);
+  point = await pointerTarget("customer", firstOrder.id);
+  await pa.mouse.click(point.x, point.y);
   await wait(
     async () => app.town.cafes!.store.byOwner(aid).served === 1,
     "customer payment was not saved",
@@ -104,11 +179,31 @@ try {
   assert.equal(earned.coins, 178);
   assert.equal(app.town.cafes!.store.byOwner(bid).coins, 150);
   console.log(
-    "PASS: prepare → ready → serve → drink → authoritative payment; visitor economy isolated",
+    "PASS: physical mouse hold/cancel → ready → pickup → walk → serve → drink → authoritative payment; visitor economy isolated",
   );
+  await wait(async () => {
+    const names = JSON.parse(
+      (await pa.locator("#world canvas").getAttribute("data-model-names")) ??
+        "[]",
+    );
+    return [
+      "kenney-character",
+      "table_round_A",
+      "chair_A",
+      "kitchencounter_straight_A",
+      "bowl_small",
+      "building_A_withoutBase",
+      "building_B_withoutBase",
+    ].every((name) => names.includes(name));
+  }, "CC0 GLB models should load");
+  assert.equal(
+    await pa.locator("#world canvas").getAttribute("data-asset-error"),
+    null,
+  );
+  await pa.locator("#world").scrollIntoViewIfNeeded();
   await pa.screenshot({
     path: "test-results/cafe-online-desktop.png",
-    fullPage: true,
+    fullPage: false,
   });
   await pa.locator('[data-action="close"]').click();
   await pa.locator('[data-action="feed"]').click();
@@ -116,14 +211,14 @@ try {
     async () => app.town.cafes!.store.byOwner(aid).food === 4,
     "cat feeding failed",
   );
-  await pa.locator("summary").click();
+  await pa.locator("summary").first().click();
   await pa.locator('[data-action="decor"]').click();
   await wait(
     async () => app.town.cafes!.store.byOwner(aid).level === 2,
     "upgrade failed",
   );
   assert.equal(app.town.cafes!.store.byOwner(aid).coins, 98);
-  await pa.reload();
+  await pa.reload({ waitUntil: "domcontentloaded" });
   await pa.locator("#join").click();
   await wait(
     async () =>
@@ -140,6 +235,96 @@ try {
     await pa.evaluate(() => document.documentElement.scrollWidth > innerWidth),
     false,
   );
+  await pa.locator('[data-action="open"]').click();
+  const mobileOrder = app.town.cafes!.store.orders(cafeId!)[0];
+  const touch = await a.newCDPSession(pa);
+  const touchPress = async (point: { x: number; y: number }) =>
+    touch.send("Input.dispatchTouchEvent", {
+      type: "touchStart",
+      touchPoints: [point],
+    });
+  const touchRelease = async () =>
+    touch.send("Input.dispatchTouchEvent", {
+      type: "touchEnd",
+      touchPoints: [],
+    });
+  const tap = async (point: { x: number; y: number }) => {
+    await touchPress(point);
+    await touchRelease();
+  };
+  point = await pointerTarget("machine");
+  await pa.touchscreen.tap(point.x, point.y);
+  await wait(async () => {
+    const p = app.town.residents.get(aid)!.state;
+    return Math.hypot(p.x - STATION.x, p.z - STATION.z) < 1.4;
+  }, "mobile tap should approach the machine");
+  await pa.waitForTimeout(300);
+  point = await pointerTarget("machine");
+  await touchPress(point);
+  await wait(
+    async () => !!app.town.residents.get(aid)!.work,
+    "touch hold must actually start",
+  );
+  await pa.waitForTimeout(650);
+  await touchRelease();
+  await wait(
+    async () =>
+      app.town.cafes!.store.orders(cafeId!).find((o) => o.id === mobileOrder.id)
+        ?.status === "WAITING",
+    "touch release should cancel brewing",
+  );
+  await pa.waitForFunction(
+    () => document.querySelector<HTMLElement>("#brew-progress")!.hidden,
+  );
+  await pa.waitForTimeout(300);
+  await pa.keyboard.down("e");
+  await pa.waitForTimeout(4600);
+  await pa.keyboard.up("e");
+  await wait(
+    async () =>
+      app.town.cafes!.store.orders(cafeId!).find((o) => o.id === mobileOrder.id)
+        ?.status === "READY",
+    "keyboard E should require a full hold",
+  );
+  await pa.waitForTimeout(250);
+  point = await pointerTarget("machine");
+  await tap(point);
+  await wait(
+    async () =>
+      app.town.residents.get(aid)!.state.carriedOrderId === mobileOrder.id,
+    "mobile pickup",
+  );
+  await pa.waitForTimeout(250);
+  point = await pointerTarget("customer", mobileOrder.id);
+  await tap(point);
+  await wait(async () => {
+    const p = app.town.residents.get(aid)!.state,
+      t = SERVICE_POINTS[mobileOrder.seat];
+    return Math.hypot(p.x - t.x, p.z - t.z) < 1.5;
+  }, "mobile walk to customer");
+  await pa.waitForTimeout(300);
+  point = await pointerTarget("customer", mobileOrder.id);
+  await tap(point);
+  await wait(
+    async () => app.town.cafes!.store.byOwner(aid).served === 2,
+    "mobile delivery payment",
+  );
+  assert.equal(app.town.cafes!.store.byOwner(aid).coins, 129);
+  await touch.detach();
+  await pa.locator('[data-action="close"]').click();
+  await pa.locator("summary").first().click();
+  await pa.locator("summary").filter({ hasText: "Adopt a cat" }).click();
+  await pa.locator('[data-action="adopt"][data-target="4"]').click();
+  await wait(
+    async () => app.town.cafes!.store.byOwner(aid).cats.length === 2,
+    "selected cat adoption",
+  );
+  assert.equal(app.town.cafes!.store.byOwner(aid).cats[1].coat, 4);
+  assert.equal(app.town.cafes!.store.byOwner(aid).coins, 29);
+  await pa.locator("#world").scrollIntoViewIfNeeded();
+  console.log(
+    "PASS: emulated touch cancellation/pickup/delivery, keyboard E hold, and selected calico adoption",
+  );
   await pa.screenshot({
     path: "test-results/cafe-online-mobile.png",
     fullPage: true,
@@ -149,7 +334,7 @@ try {
     async () => (await pa.locator("#app").getAttribute("data-area")) === "town",
     "exit route failed",
   );
-  assert.equal(app.town.cafes!.store.byOwner(aid).coins, 98);
+  assert.equal(app.town.cafes!.store.byOwner(aid).coins, 29);
   assert.deepEqual(errors, []);
   console.log(
     "PASS: cat food consumption, decoration purchase, saved coins after reload, mobile layout, exit to correct lot, no JS errors",

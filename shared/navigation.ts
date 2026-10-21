@@ -1,7 +1,13 @@
 import { blocked, move, WORLD } from "./world.ts";
 import { ROOM, ROOM_OBSTACLES } from "./cafe.ts";
 export type Point = { x: number; z: number };
-export function roomBlocked(x: number, z: number) {
+const plantObstacles = [-5, 5].map((x) => ({ x, z: 3.5, w: 0.65, d: 0.65 }));
+const layouts = [
+  ROOM_OBSTACLES,
+  [...ROOM_OBSTACLES, ...plantObstacles],
+  [...ROOM_OBSTACLES, ...plantObstacles, { x: 5.3, z: -3.7, w: 0.6, d: 1.4 }],
+];
+export function roomBlocked(x: number, z: number, level = 1) {
   return (
     !Number.isFinite(x) ||
     !Number.isFinite(z) ||
@@ -9,7 +15,7 @@ export function roomBlocked(x: number, z: number) {
     x > ROOM.maxX - 0.38 ||
     z < ROOM.minZ + 0.38 ||
     z > ROOM.maxZ - 0.38 ||
-    ROOM_OBSTACLES.some(
+    layouts[Math.max(0, Math.min(2, level - 1))].some(
       (b) =>
         x > b.x - b.w / 2 - 0.38 &&
         x < b.x + b.w / 2 + 0.38 &&
@@ -24,6 +30,7 @@ export function step(
   dz: number,
   dt: number,
   inside = false,
+  level = 1,
 ) {
   if (!inside) return move(p, dx, dz, dt);
   const length = Math.max(1, Math.hypot(dx, dz));
@@ -31,16 +38,23 @@ export function step(
   let { x, z } = p;
   for (let i = 0; i < 4; i++) {
     const nx = x + ((dx / length) * d) / 4;
-    if (!roomBlocked(nx, z)) x = nx;
+    if (!roomBlocked(nx, z, level)) x = nx;
     const nz = z + ((dz / length) * d) / 4;
-    if (!roomBlocked(x, nz)) z = nz;
+    if (!roomBlocked(x, nz, level)) z = nz;
   }
   return { x, z };
 }
 /** Bounded grid A*: server generated walking routes, never instant teleports. */
-export function route(from: Point, to: Point, inside = false): Point[] {
+export function route(
+  from: Point,
+  to: Point,
+  inside = false,
+  level = 1,
+): Point[] {
   const cell = inside ? 0.5 : 1;
-  const isBlocked = inside ? roomBlocked : blocked;
+  const isBlocked = inside
+    ? (x: number, z: number) => roomBlocked(x, z, level)
+    : blocked;
   if (isBlocked(to.x, to.z)) throw Error("That destination is blocked.");
   const key = (x: number, z: number) => `${x},${z}`;
   const sx = Math.round(from.x / cell),

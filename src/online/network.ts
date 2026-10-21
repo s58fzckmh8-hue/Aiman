@@ -154,6 +154,13 @@ export class Network {
     );
     return requestId;
   }
+  work(id: string, phase: "pulse" | "stop") {
+    if (
+      this.state === "connected" &&
+      this.socket?.readyState === WebSocket.OPEN
+    )
+      this.socket.send(JSON.stringify({ type: "work", id, phase }));
+  }
   stop() {
     this.stopped = true;
     clearTimeout(this.retry);

@@ -1,12 +1,12 @@
 # Kafe Miaw 🐾
 
-**Version 0.3 — playable online café slice.** A shared 3D town with independently owned cafés, real two-browser multiplayer, server-controlled coffee orders, cats, supplies and upgrades. This is not the complete master-spec life simulation or a CrazyGames release.
+**Version 0.4 — hands-on online café.** A shared 3D town with independently owned cafés, real two-browser multiplayer, server-controlled coffee orders, cats, supplies and upgrades. This is not the complete master-spec life simulation or a CrazyGames release.
 
 ![A real two-browser café session](docs/images/online-cafe.png)
 
 ## Start with the VS Code terminal
 
-Use **Node.js 24+** and Git. No Laragon, PHP, MySQL or separate database installation is needed. In Windows PowerShell, for an existing checkout:
+Use **Node.js 24+** and Git. No Laragon, PHP, MySQL or separate database installation is needed. In Windows PowerShell, stop the old game with **Ctrl+C in its running terminal** before reinstalling dependencies (Windows locks a running `esbuild.exe`). For an existing checkout:
 
 ```powershell
 Set-Location "$env:USERPROFILE\KafeMiawOnline"
@@ -32,14 +32,14 @@ Do not overwrite local changes when updating. A folder extracted from ZIP is not
 
 1. Choose **Play Online**, then **Walk to my café**. Your character follows a server-generated walking route and enters through the door.
 2. Choose **Open café**. The first customer arrives; there are two customer places.
-3. Choose **Prepare coffee**. Your character walks to the machine. One bean is consumed atomically; brewing takes four seconds.
-4. Choose **Serve coffee** when ready. Your character walks to the customer. The customer drinks, then pays. Only the owner's wallet is credited, once.
-5. Pet/feed cats, order supplies, decorate the café or adopt another cat under **Supplies & café upgrades**.
+3. **Click the coffee machine** in the 3D room to walk over. When nearby, **hold the machine with your mouse/touch, or hold E**, for four seconds. A server-timed progress bar and steam show the work. Releasing early, walking away or losing hold updates cancels brewing and returns the bean.
+4. **Click the machine or press E** to pick up ready coffee. The cup is visible on your character. Walk to the correct customer (click them to approach), then **click them again or press E nearby** to serve. Customers drink and then pay; only the owner's wallet is credited, once. There are no Prepare/Serve buttons in the management panel.
+5. Pet/feed cats, order supplies, decorate the café or choose one of eight coat designs when adopting another cat under **Supplies & café upgrades**.
 6. Choose **Walk to exit** to return through your entrance. Leaving or disconnecting closes the café, cancels unpaid orders and returns their reserved beans. Completed payments remain saved.
 
 Starter balance: 150 PawCoins, 12 beans, 5 food portions and Oyen. Coffee pays 20 + 3 per decoration level + a 5-coin happy-cat bonus. Two tables, four chairs, three cat slots and three decoration levels are supported. Cat happiness is a simple persistent care stat in this slice; full needs/AI/genetics are not implemented.
 
-WASD/arrows or on-screen arrows move your character. Manual movement cancels a queued walking interaction. Right-drag or touch-drag orbits the camera; scroll zooms. **Reset camera** restores the current area's view. Automatic interactions walk to the appropriate service points rather than crediting distant clicks.
+Click the ground, use WASD/arrows, or use the on-screen arrows to walk. Keyboard movement cancels queued walking or brewing. Right-drag/touch-drag orbits; scroll zooms. **Reset camera** restores the current area view. The interior camera frames the room on portrait screens. Clicking a distant machine/customer approaches it; work and delivery still require a separate nearby interaction. The server validates location and ownership.
 
 Unpaid orders expire after 60 seconds with a bean refund if preparation consumed a bean. There is no passive money for leaving the server running. Storage caps prevent oversupply. Purchases cannot create negative currency or duplicate items when the same request is retried.
 
@@ -59,6 +59,7 @@ Two distant PCs cannot share a localhost server. A public online game needs a se
 npm.cmd test
 npm.cmd run typecheck
 npm.cmd run test:online
+npm.cmd run test:assets
 npm.cmd run build
 npm.cmd exec -- playwright install chromium
 npm.cmd run test:browser
@@ -96,4 +97,4 @@ Public production hosting must provide trusted HTTPS/WSS, same-origin `/api` and
 
 **Implemented/tested:** two-browser town movement/reconnect, building transitions, ownership/visitor permissions, independent durable cafés, coffee orders/payments, supply purchases, simple cat care/adoption, fixed decoration upgrades and offline-mode preservation.
 
-**Not complete:** advanced cat needs/AI/breeds/genetics, furniture build mode, homes, functional town shops, employees, recipes beyond black coffee, quests/XP, full tutorials/audio, matchmaking, 5/10/20-player load tests, Internet deployment and CrazyGames readiness. Twenty visible lots are reserved; only two-player sessions have been validated. All geometry and animations are original code primitives, not final commercial assets. Consult package licenses for dependencies.
+**Not complete:** advanced cat needs/AI/breeds/genetics, furniture build mode, homes, functional town shops, employees, recipes beyond black coffee, quests/XP, full tutorials/audio, matchmaking, 5/10/20-player load tests, Internet deployment and CrazyGames readiness. Twenty visible lots are reserved; only two-player sessions have been validated. Nine curated CC0 GLB models now supply buildings, furniture and animated characters. Eight original coat designs and the espresso machine remain project-created artwork. See [asset choices, author credits and licenses](docs/ASSETS.md); these are not final bespoke commercial characters or a full breed/genetics system. Consult package licenses for dependencies.

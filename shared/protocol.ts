@@ -11,6 +11,8 @@ export type PlayerState = {
   connected: boolean;
   color: number;
   area?: string;
+  carriedOrderId?: string;
+  work?: { startedAt: number; endsAt: number; orderId: string };
 };
 export type PublicState = {
   type: "state";

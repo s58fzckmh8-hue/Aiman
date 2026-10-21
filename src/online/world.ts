@@ -1,4 +1,7 @@
 import * as THREE from "three";
+import { model, disposeAssets } from "./assets.ts";
+import { catModel, disposeCatModel, disposeCatResources } from "./cat-model.ts";
+import type { WorldHit } from "./interaction.ts";
 import {
   TABLES,
   SERVICE_POINTS,
@@ -17,6 +20,11 @@ type Avatar = {
   samples: Sample[];
   label: THREE.Sprite;
   name: string;
+  mixer?: THREE.AnimationMixer;
+  actions?: Record<string, THREE.AnimationAction>;
+  animation?: string;
+  cup?: THREE.Group;
+  badge?: THREE.Mesh;
 };
 export class World {
   private renderer: THREE.WebGLRenderer;
@@ -35,6 +43,18 @@ export class World {
   private materials = new Map<number, THREE.MeshStandardMaterial>();
   private box = new THREE.BoxGeometry(1, 1, 1);
   private ball = new THREE.SphereGeometry(1, 12, 8);
+  private cylinder = new THREE.CylinderGeometry(1, 1, 1, 12);
+  private torus = new THREE.TorusGeometry(1, 0.3, 6, 12);
+  private raycaster = new THREE.Raycaster();
+  private pointerHit?: WorldHit;
+  private pointerStart = { x: 0, y: 0 };
+  private isTouch = false;
+  private touchMoved = false;
+  private readyCup?: THREE.Group;
+  private steam: THREE.Mesh[] = [];
+  private brewing = false;
+  private assetCount = 0;
+  private loadedAssetNames = new Set<string>();
   private labels: THREE.Sprite[] = [];
   private frame = 0;
   private lastDraw = performance.now();
@@ -46,7 +66,10 @@ export class World {
   private disposed = false;
   private motion = matchMedia("(prefers-reduced-motion: reduce)").matches;
   selfId = "";
-  constructor(private host: HTMLElement) {
+  constructor(
+    private host: HTMLElement,
+    private interact?: (hit: WorldHit, phase: "press" | "release") => void,
+  ) {
     this.renderer = new THREE.WebGLRenderer({
       antialias: true,
       powerPreference: "low-power",
@@ -60,6 +83,7 @@ export class World {
       "Shared 3D town. Use WASD, arrow keys or the on-screen movement buttons.",
     );
     this.renderer.domElement.setAttribute("role", "img");
+    this.renderer.domElement.tabIndex = 0;
     this.host.append(this.renderer.domElement);
     this.scene.fog = new THREE.Fog(0xeceee2, 45, 115);
     this.scene.add(new THREE.HemisphereLight(0xfff6e4, 0x8caa91, 1.8));
@@ -149,6 +173,103 @@ export class World {
     sprite.scale.set(width, width / 4, 1);
     return sprite;
   }
+  private assetLoaded(name: string) {
+    this.assetCount++;
+    this.loadedAssetNames.add(name);
+    this.renderer.domElement.dataset.assetsLoaded = String(this.assetCount);
+    this.renderer.domElement.dataset.modelNames = JSON.stringify([
+      ...this.loadedAssetNames,
+    ]);
+  }
+  private asset(
+    name: string,
+    x: number,
+    y: number,
+    z: number,
+    width: number,
+    height: number,
+    depth: number,
+    rotation = 0,
+  ) {
+    const root = new THREE.Group();
+    root.position.set(x, y, z);
+    root.rotation.y = rotation;
+    this.environment.add(root);
+    const fallback = this.cube(
+      0xc7ae83,
+      0,
+      height / 2,
+      0,
+      width,
+      height,
+      depth,
+      root,
+    );
+    void model(name, { width, height, depth })
+      .then((asset) => {
+        if (root.parent !== this.environment || this.disposed) return;
+        fallback.removeFromParent();
+        root.add(asset.group);
+        this.assetLoaded(name);
+      })
+      .catch(() => {
+        this.renderer.domElement.dataset.assetError =
+          "Some artwork could not load. Reload to try again.";
+      });
+    return root;
+  }
+  private cup() {
+    const g = new THREE.Group();
+    this.mesh(this.cylinder, 0xf4eee0, 0, 0, 0, 0.12, 0.13, 0.12, g);
+    this.mesh(this.cylinder, 0x765344, 0, 0.135, 0, 0.103, 0.008, 0.103, g);
+    const handle = this.mesh(
+      this.torus,
+      0xf4eee0,
+      0.15,
+      0.02,
+      0,
+      0.07,
+      0.09,
+      0.07,
+      g,
+    );
+    handle.rotation.y = Math.PI / 2;
+    return g;
+  }
+  private coffeeMachine() {
+    const g = new THREE.Group();
+    g.position.set(-3.5, 1.4, -3.8);
+    g.userData.interaction = { kind: "machine" };
+    this.environment.add(g);
+    this.cube(0x436a5a, 0, 0.38, 0, 1.1, 0.76, 0.68, g);
+    this.cube(0xb9b5a4, 0, 0.55, 0.36, 0.8, 0.25, 0.09, g);
+    this.cube(0x2f3935, 0, 0.18, 0.36, 0.74, 0.45, 0.1, g);
+    this.cube(0xd1aa71, 0, 0.05, 0.5, 0.9, 0.06, 0.44, g);
+    this.cube(0xa6aaa4, 0, 0.36, 0.5, 0.1, 0.15, 0.12, g);
+    this.mesh(this.ball, 0xd6b889, 0.3, 0.61, 0.425, 0.065, 0.065, 0.025, g);
+    this.cube(0x303b35, 0.56, 0.25, 0.2, 0.04, 0.46, 0.05, g);
+    this.readyCup = this.cup();
+    this.readyCup.position.set(0, 0.19, 0.5);
+    g.add(this.readyCup);
+    this.readyCup.visible = false;
+    this.steam = [];
+    for (let i = 0; i < 3; i++) {
+      const steam = this.mesh(
+        this.ball,
+        0xf5efe0,
+        -0.17 + i * 0.17,
+        0.9,
+        0.1,
+        0.035,
+        0.12,
+        0.035,
+        g,
+      );
+      steam.visible = false;
+      this.steam.push(steam);
+    }
+    return g;
+  }
   private buildTown() {
     this.cube(0xb8c6a1, 0, -0.25, 0, 100, 0.5, 60);
     this.cube(0xe7ddc5, 0, 0.01, 0, 96, 0.08, 18);
@@ -162,30 +283,33 @@ export class World {
     for (const b of BUILDINGS) {
       const side = b.z < 0 ? 1 : -1;
       this.cube(0xd2c3a5, b.x, 0.1, b.z, 8, 0.2, 10);
-      this.cube(b.color, b.x, 2, b.z, b.w, 3.8, b.d);
-      this.cube(0x6c8271, b.x, 4.15, b.z, 7, 0.5, 7.6);
-      this.cube(0x6e6454, b.x, 1.1, b.z + side * 3.53, 1.25, 2.2, 0.12);
-      for (const dx of [-2, 2]) {
-        this.cube(0x82a5a0, b.x + dx, 2.1, b.z + side * 3.55, 1.35, 1.35, 0.12);
-        this.cube(0xf2e7cf, b.x + dx, 2.1, b.z + side * 3.64, 0.07, 1.4, 0.08);
-      }
-      this.cube(0xe7d2ae, b.x, 0.16, b.z + side * 5, 2, 0.1, 3);
-      const awning = this.cube(
-        0xd5a27d,
+      this.asset(
+        b.id % 2 ? "building_B_withoutBase" : "building_A_withoutBase",
         b.x,
-        2.95,
-        b.z + side * 3.95,
-        4,
-        0.22,
-        1.1,
+        0.2,
+        b.z,
+        b.w,
+        5,
+        b.d,
+        b.z < 0 ? 0 : Math.PI,
       );
-      awning.rotation.x = side * 0.12;
+      const door = this.cube(
+        0x6e6454,
+        b.x,
+        1.1,
+        b.z + side * 3.53,
+        1.25,
+        2.2,
+        0.12,
+      );
+      door.userData.interaction = { kind: "door", target: String(b.id) };
+      this.cube(0xe7d2ae, b.x, 0.16, b.z + side * 5, 2, 0.1, 3);
       const sign = this.sign(
         `LOT ${String(b.id + 1).padStart(2, "0")}`,
         "#57705c",
         3,
       );
-      sign.position.set(b.x, 5.2, b.z);
+      sign.position.set(b.x, 5.9, b.z);
       this.environment.add(sign);
       this.labels.push(sign);
     }
@@ -217,12 +341,48 @@ export class World {
     label.position.y = 2.55;
     group.add(label);
     group.position.set(p.x, 0, p.z);
-    const a = { group, legs, arms, label, name: p.name, samples: [] };
+    const a: Avatar = { group, legs, arms, label, name: p.name, samples: [] };
     this.avatars.set(p.id, a);
+    a.badge = this.mesh(
+      this.torus,
+      p.color,
+      0,
+      0.04,
+      0,
+      0.42,
+      0.42,
+      0.42,
+      group,
+    );
+    a.badge.rotation.x = Math.PI / 2;
+    a.cup = this.cup();
+    a.cup.position.set(0.44, 1.08, 0.42);
+    group.add(a.cup);
+    a.cup.visible = false;
+    void model("kenney-character", { height: 1.85 })
+      .then((asset) => {
+        if (this.avatars.get(p.id) !== a || this.disposed) return;
+        for (const child of [...group.children])
+          if (child !== label && child !== a.cup && child !== a.badge)
+            child.removeFromParent();
+        group.add(asset.group);
+        a.mixer = new THREE.AnimationMixer(asset.object);
+        a.actions = {};
+        for (const clip of asset.animations)
+          a.actions[clip.name] = a.mixer.clipAction(clip);
+        this.assetLoaded("kenney-character");
+      })
+      .catch(() => {
+        this.renderer.domElement.dataset.assetError =
+          "Some character artwork could not load. Reload to try again.";
+      });
     return a;
   }
   private clearEnvironment() {
+    for (const g of this.cats.values()) disposeCatModel(g);
     this.environment.clear();
+    this.readyCup = undefined;
+    this.steam = [];
     for (const label of this.labels) {
       label.material.map?.dispose();
       label.material.dispose();
@@ -240,45 +400,32 @@ export class World {
     this.cube(0x8caa9b, 1.5, 2, -4.86, 3.8, 1.7, 0.1);
     this.cube(0xfaf1d7, 1.5, 2, -4.76, 0.09, 1.7, 0.07);
     this.cube(0xfaf1d7, 1.5, 2, -4.76, 3.8, 0.08, 0.07);
-    this.cube(0xb2916b, -3.5, 0.65, -3.8, 3.8, 1.3, 1.5);
-    this.cube(0xf0ddba, -3.5, 1.32, -3.8, 4, 0.12, 1.65);
-    this.cube(0x456c5c, -3.7, 1.75, -3.8, 0.9, 0.8, 0.65);
-    this.cube(0x343d38, -3.7, 1.85, -3.43, 0.65, 0.3, 0.04);
+    this.asset("kitchencounter_straight_A", -3.5, 0, -3.8, 3.8, 1.32, 1.5);
+    this.coffeeMachine();
     const label = this.sign(cafe.ownerName + "’s café", "#3a5d48", 4);
     label.position.set(-1, 3.3, -4.7);
     this.environment.add(label);
     this.labels.push(label);
     for (const t of TABLES) {
-      this.cube(0xb88f66, t.x, 0.48, 0.3, 0.2, 0.9, 0.2);
-      this.cube(0xd6b180, t.x, 0.98, 0.3, 1.6, 0.12, 1.5);
-      for (const z of [-0.85, 1.35]) {
-        this.cube(0x789582, t.x, 0.5, z, 0.7, 0.15, 0.7);
-        this.cube(
-          0x789582,
-          t.x,
-          0.85,
-          z + (z < 0 ? -0.3 : 0.3),
-          0.7,
-          0.75,
-          0.1,
-        );
-      }
+      this.asset("table_round_A", t.x, 0, 0.3, 1.6, 1.02, 1.5);
+      for (const z of [-0.85, 1.35])
+        this.asset("chair_A", t.x, 0, z, 0.7, 1.22, 0.7, z < 0 ? 0 : Math.PI);
     }
     this.mesh(this.ball, 0xcbd5b1, 4, 0.07, 0.2, 1.7, 0.13, 3.5);
     this.cube(0xb99b76, 4, 0.13, -2.5, 1.7, 0.3, 1.4);
     this.cube(0xe9d6b5, 4, 0.32, -2.5, 1.5, 0.18, 1.2);
-    this.cube(0x9da991, 4.8, 0.1, 2, 0.5, 0.2, 0.5);
-    this.mesh(this.ball, 0x8aabaf, 4.8, 0.23, 2, 0.23, 0.07, 0.23);
+    this.asset("bowl_small", 4.8, 0, 2, 0.5, 0.22, 0.5);
     this.cube(0xb8a182, 5, 0.8, -0.8, 0.2, 1.6, 0.2);
     this.cube(0xd9c8a9, 5, 1.65, -0.8, 1, 0.15, 1);
-    this.cube(0xaab58d, 0, 0.025, 4.35, 2, 0.04, 0.85);
+    const exit = this.cube(0xaab58d, 0, 0.025, 4.35, 2, 0.04, 0.85);
+    exit.userData.interaction = { kind: "exit" };
     if (cafe.level >= 2) {
       for (const x of [-5, 5]) {
-        this.cube(0xc2926c, x, 0.2, 3.5, 0.5, 0.4, 0.5);
-        this.mesh(this.ball, 0x789e6c, x, 0.85, 3.5, 0.5, 0.7, 0.5);
+        this.asset("cactus_small_A", x, 0, 3.5, 0.65, 1.1, 0.65);
       }
     }
     if (cafe.level >= 3) {
+      this.asset("shelf_B_small_decorated", 5.3, 0, -3.7, 0.6, 1.9, 1.4);
       this.cube(0xe8bd9e, 2.5, 0.1, 3, 2, 0.15, 1.5);
       const sign = this.sign("A little coffee. A lot of cats.", "#688256", 3);
       sign.position.set(3, 3.1, -4.6);
@@ -288,35 +435,16 @@ export class World {
     this.decoration = cafe.level;
   }
   private catModel(coat: number) {
-    const g = new THREE.Group();
+    const g = catModel(coat);
+    g.userData.interaction = { kind: "cat" };
     this.environment.add(g);
-    const color = [0xdba255, 0xeee5d5, 0x89988b][coat % 3];
-    this.mesh(this.ball, color, 0, 0.3, 0, 0.35, 0.25, 0.57, g);
-    this.mesh(this.ball, color, 0, 0.65, 0.38, 0.3, 0.28, 0.28, g);
-    for (const x of [-0.2, 0.2]) {
-      const ear = this.cube(color, x, 0.91, 0.37, 0.16, 0.28, 0.16, g);
-      ear.rotation.z = x < 0 ? 0.3 : -0.3;
-      this.mesh(
-        this.ball,
-        0x4f6546,
-        x * 0.6,
-        0.7,
-        0.62,
-        0.035,
-        0.045,
-        0.025,
-        g,
-      );
-      this.cube(color, x, 0.14, 0.25, 0.12, 0.28, 0.12, g);
-    }
-    const tail = this.cube(color, 0.2, 0.5, -0.6, 0.13, 0.13, 0.65, g);
-    tail.rotation.y = 0.4;
     return g;
   }
   private roomEntities(cafe: CafeView, now: number) {
     const liveCats = new Set(cafe.cats.map((c) => c.id));
     for (const [id, g] of this.cats)
       if (!liveCats.has(id)) {
+        disposeCatModel(g);
         g.removeFromParent();
         this.cats.delete(id);
       }
@@ -338,6 +466,7 @@ export class World {
             { x: customer.group.position.x, z: customer.group.position.z },
             ENTRY,
             true,
+            cafe.level,
           );
         } catch {
           customer.path = [ENTRY];
@@ -348,14 +477,33 @@ export class World {
       if (!customer) {
         const group = new THREE.Group();
         this.environment.add(group);
+        group.userData.interaction = { kind: "customer", target: order.id };
         this.cube(0xbf9380, 0, 0.9, 0, 0.52, 0.7, 0.38, group);
         this.mesh(this.ball, 0xe5b58a, 0, 1.5, 0, 0.28, 0.3, 0.27, group);
         this.mesh(this.ball, 0x72543e, 0, 1.68, -0.02, 0.29, 0.17, 0.28, group);
         for (const x of [-0.15, 0.15])
           this.cube(0x666f68, x, 0.3, 0, 0.18, 0.5, 0.2, group);
+        void model("kenney-character", { height: 1.65 })
+          .then((asset) => {
+            if (group.parent !== this.environment || this.disposed) return;
+            group.clear();
+            group.add(asset.group);
+            group.userData.mixer = new THREE.AnimationMixer(asset.object);
+            const actions: Record<string, THREE.AnimationAction> = {};
+            for (const clip of asset.animations)
+              actions[clip.name] = (
+                group.userData.mixer as THREE.AnimationMixer
+              ).clipAction(clip);
+            group.userData.actions = actions;
+            this.assetLoaded("kenney-character");
+          })
+          .catch(() => {
+            this.renderer.domElement.dataset.assetError =
+              "Some artwork could not load. Reload to try again.";
+          });
         const target = TABLES[order.seat];
         const path = [
-          ...route(ENTRY, SERVICE_POINTS[order.seat], true),
+          ...route(ENTRY, SERVICE_POINTS[order.seat], true, cafe.level),
           target,
         ];
         if (now - order.createdAt > 4000) {
@@ -386,7 +534,12 @@ export class World {
         this.zoom = area === "town" ? 24 : 13;
       }
     }
-    if (s.cafe) this.roomEntities(s.cafe, s.time);
+    if (s.cafe) {
+      this.roomEntities(s.cafe, s.time);
+      this.brewing = s.players.some((p) => !!p.work);
+      if (this.readyCup)
+        this.readyCup.visible = s.cafe.orders.some((o) => o.status === "READY");
+    }
 
     const now = performance.now();
     const seen = new Set<string>();
@@ -403,6 +556,7 @@ export class World {
       }
   }
   private disposeAvatar(a: Avatar) {
+    a.mixer?.stopAllAction();
     a.group.removeFromParent();
     a.label.material.map?.dispose();
     a.label.material.dispose();
@@ -414,21 +568,79 @@ export class World {
     this.renderer.setSize(width, height, false);
   }
   private prevent = (e: Event) => e.preventDefault();
-  private pointerDown = (e: PointerEvent) => {
-    if (e.button === 2 || e.pointerType === "touch") {
-      this.dragging = true;
-      this.px = e.clientX;
-      this.renderer.domElement.setPointerCapture(e.pointerId);
+  private hit(e: PointerEvent): WorldHit | undefined {
+    const rect = this.renderer.domElement.getBoundingClientRect();
+    this.raycaster.setFromCamera(
+      new THREE.Vector2(
+        ((e.clientX - rect.left) / rect.width) * 2 - 1,
+        (-(e.clientY - rect.top) / rect.height) * 2 + 1,
+      ),
+      this.camera,
+    );
+    const hit = this.raycaster.intersectObject(this.environment, true)[0];
+    if (!hit) return;
+    let object: THREE.Object3D | null = hit.object;
+    while (object && object !== this.environment) {
+      if (object.userData.interaction)
+        return object.userData.interaction as WorldHit;
+      object = object.parent;
     }
+    return { kind: "floor", point: { x: hit.point.x, z: hit.point.z } };
+  }
+  private pointerDown = (e: PointerEvent) => {
+    this.renderer.domElement.focus({ preventScroll: true });
+    this.pointerStart = { x: e.clientX, y: e.clientY };
+    this.px = e.clientX;
+    this.isTouch = e.pointerType === "touch";
+    this.touchMoved = false;
+    this.renderer.domElement.setPointerCapture(e.pointerId);
+    if (e.button === 2) {
+      this.dragging = true;
+      return;
+    }
+    this.pointerHit = this.hit(e);
+    if (
+      this.pointerHit &&
+      (!this.isTouch || this.pointerHit.kind === "machine")
+    )
+      this.interact?.(this.pointerHit, "press");
   };
   private pointerMove = (e: PointerEvent) => {
+    if (
+      this.isTouch &&
+      Math.hypot(
+        e.clientX - this.pointerStart.x,
+        e.clientY - this.pointerStart.y,
+      ) > 8
+    ) {
+      this.touchMoved = true;
+      this.dragging = true;
+      if (this.pointerHit?.kind === "machine")
+        this.interact?.(this.pointerHit, "release");
+    }
     if (this.dragging) {
       this.angle -= (e.clientX - this.px) * 0.008;
       this.px = e.clientX;
+    } else {
+      const hit = this.hit(e);
+      this.renderer.domElement.style.cursor =
+        hit && hit.kind !== "floor" ? "pointer" : "crosshair";
     }
   };
-  private pointerUp = () => {
+  private pointerUp = (e: PointerEvent) => {
+    if (this.pointerHit) {
+      if (
+        e.type !== "pointercancel" &&
+        this.isTouch &&
+        !this.touchMoved &&
+        this.pointerHit.kind !== "machine"
+      )
+        this.interact?.(this.pointerHit, "press");
+      this.interact?.(this.pointerHit, "release");
+    }
+    this.pointerHit = undefined;
     this.dragging = false;
+    this.isTouch = false;
   };
   private wheel = (e: WheelEvent) => {
     e.preventDefault();
@@ -453,6 +665,21 @@ export class World {
     this.lastDraw = now;
     for (const [id, c] of this.customers) {
       const target = c.path[0];
+      const mixer = c.group.userData.mixer as THREE.AnimationMixer | undefined;
+      if (mixer) {
+        const next = target ? "walk" : "idle";
+        if (c.group.userData.animation !== next) {
+          const actions = c.group.userData.actions as Record<
+            string,
+            THREE.AnimationAction
+          >;
+          actions[c.group.userData.animation]?.fadeOut(0.15);
+          actions[next]?.reset().fadeIn(0.15).play();
+          c.group.userData.animation = next;
+        }
+        mixer.update(deltaDraw);
+      }
+
       if (target) {
         const dx = target.x - c.group.position.x,
           dz = target.z - c.group.position.z,
@@ -470,6 +697,11 @@ export class World {
       }
     }
     for (const [id, g] of this.cats) {
+      const tail = g.userData.tail as THREE.Group | undefined;
+      if (tail)
+        tail.rotation.z = this.motion
+          ? 0
+          : Math.sin(now * 0.003 + id.charCodeAt(0)) * 0.2;
       g.rotation.z = this.motion
         ? 0
         : Math.sin(now * 0.002 + id.length) * 0.025;
@@ -506,19 +738,60 @@ export class World {
       a.legs.forEach((leg, i) => (leg.rotation.x = phase * (i ? 1 : -1)));
       a.arms.forEach((arm, i) => (arm.rotation.x = phase * (i ? -1 : 1)));
       a.label.material.opacity = to.state.connected ? 1 : 0.5;
+      if (a.cup) a.cup.visible = !!to.state.carriedOrderId;
+      if (a.mixer) {
+        const next = to.state.moving ? "walk" : "idle";
+        if (next !== a.animation) {
+          if (a.animation) a.actions?.[a.animation]?.fadeOut(0.15);
+          a.actions?.[next]?.reset().fadeIn(0.15).play();
+          a.animation = next;
+        }
+        a.mixer.update(deltaDraw);
+      }
+
       if (id === this.selfId)
         this.target.lerp(
-          new THREE.Vector3(a.group.position.x, 0, a.group.position.z),
+          this.area === "town"
+            ? new THREE.Vector3(a.group.position.x, 0, a.group.position.z)
+            : new THREE.Vector3(0, 0, 0),
           0.08,
         );
     }
+    const cameraZoom =
+      this.zoom *
+      (this.area === "town" ? 1 : Math.max(1, 1 / this.camera.aspect));
     this.camera.position.set(
-      this.target.x + Math.sin(this.angle) * this.zoom,
-      this.zoom * 0.95,
-      this.target.z + Math.cos(this.angle) * this.zoom,
+      this.target.x + Math.sin(this.angle) * cameraZoom,
+      cameraZoom * 0.95,
+      this.target.z + Math.cos(this.angle) * cameraZoom,
     );
     this.camera.lookAt(this.target);
+    for (const [i, steam] of this.steam.entries()) {
+      steam.visible = this.brewing;
+      steam.position.y = 0.88 + ((now * 0.0006 + i * 0.25) % 1) * 0.4;
+    }
     this.renderer.render(this.scene, this.camera);
+    // Read-only screen coordinates let pointer tests target rendered objects without bypassing game logic.
+    if (import.meta.env.DEV && this.area !== "town") {
+      const project = (x: number, y: number, z: number) => {
+        const p = new THREE.Vector3(x, y, z).project(this.camera);
+        return {
+          x: ((p.x + 1) / 2) * this.renderer.domElement.clientWidth,
+          y: ((1 - p.y) / 2) * this.renderer.domElement.clientHeight,
+        };
+      };
+      this.renderer.domElement.dataset.machine = JSON.stringify(
+        project(-3.5, 1.95, -3.4),
+      );
+      this.renderer.domElement.dataset.customers = JSON.stringify(
+        [...this.customers]
+          .filter(([, c]) => !c.leaving)
+          .map(([id, c]) => ({
+            id,
+            ...project(c.group.position.x, 1.1, c.group.position.z),
+          })),
+      );
+    }
   };
   dispose() {
     this.disposed = true;
@@ -536,6 +809,11 @@ export class World {
       s.material.map?.dispose();
       s.material.dispose();
     }
+    this.clearEnvironment();
+    disposeCatResources();
+    disposeAssets();
+    this.cylinder.dispose();
+    this.torus.dispose();
     this.box.dispose();
     this.ball.dispose();
     for (const m of this.materials.values()) m.dispose();

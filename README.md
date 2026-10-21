@@ -21,7 +21,13 @@ npm.cmd run dev
 
 For an existing Git checkout, run `git pull --ff-only` first, then `npm.cmd ci` and `npm.cmd run dev`. A folder extracted from ZIP is not a Git checkout; use the fresh-checkout commands in a new folder. Do not overwrite existing local changes.
 
-`npm run dev` starts **both** the Node multiplayer backend (127.0.0.1:3001) and Vite (port 5173). Open the address printed by Vite. Stop with Ctrl+C. Port 5173 must be available; the client uses a strict port so the allowed origin remains predictable.
+`npm run dev` starts **both** the Node multiplayer backend (127.0.0.1:3001) and Vite (port 5173). Open the address printed by Vite. Stop with Ctrl+C. Port 5173 must be available. If another project uses it, choose another port:
+
+```powershell
+npm.cmd run dev -- --port 5174
+```
+
+If the backend port is also occupied, use `npm.cmd run dev -- --port 5174 --server-port 3002`. The launcher keeps Vite, its proxy and the backend origin allowlist consistent. Explicit `ALLOWED_ORIGINS` settings remain authoritative. It starts Node directly without a Windows shell wrapper.
 
 On macOS/Linux, use `npm` in place of `npm.cmd`.
 

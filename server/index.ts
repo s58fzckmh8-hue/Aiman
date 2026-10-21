@@ -7,7 +7,7 @@ const app = await createApp({
   profilePath: resolve(process.env.PROFILE_PATH ?? ".local/profiles.json"),
   origins: (
     process.env.ALLOWED_ORIGINS ??
-    "http://localhost:5173,http://127.0.0.1:5173,http://localhost:4173,http://127.0.0.1:4173"
+    `http://localhost:${process.env.VITE_PORT ?? 5173},http://127.0.0.1:${process.env.VITE_PORT ?? 5173},http://localhost:4173,http://127.0.0.1:4173`
   )
     .split(",")
     .map((s) => s.trim()),

@@ -11,6 +11,7 @@ const dir = await mkdtemp(join(tmpdir(), "miaw-cafe-browser-")),
   origin = "http://127.0.0.1:5196";
 const app = await createApp({
   profilePath: join(dir, "profiles.json"),
+  graceMs: 120000,
   origins: [origin],
   secure: false,
 });
@@ -60,6 +61,12 @@ async function wait(f: () => Promise<boolean>, label: string, timeout = 30000) {
   }
   throw Error(label);
 }
+async function phone(page: Page, open = true) {
+  const hidden = await page
+    .locator("#app")
+    .evaluate((el) => el.classList.contains("management-hidden"));
+  if (hidden === open) await page.keyboard.press("c");
+}
 async function connect(p: Page) {
   await p.goto(origin);
   await p.locator("#join").click();
@@ -75,6 +82,7 @@ try {
   await connect(pb);
   const aid = (await pa.locator("#app").getAttribute("data-self-id"))!,
     bid = (await pb.locator("#app").getAttribute("data-self-id"))!;
+  await phone(pa);
   await pa.locator('[data-action="walkHome"]').click();
   await wait(
     async () => (await pa.locator("#app").getAttribute("data-area")) !== "town",
@@ -85,6 +93,7 @@ try {
   console.log(
     "PASS: owner walks a server route to their café and enters a 3D interior",
   );
+  await phone(pb);
   await pb.locator('[data-action="visit"]').click();
   await wait(
     async () => (await pb.locator("#app").getAttribute("data-area")) === cafeId,
@@ -95,15 +104,19 @@ try {
     async () => (await pa.locator("#roster li").count()) === 2,
     "players not visible together inside",
   );
+  await phone(pa);
   await pa.locator('[data-action="open"]').click();
   assert.equal(await pa.locator('[data-action="prepare"]').count(), 0);
   assert.equal(await pa.locator('[data-action="serve"]').count(), 0);
   const firstOrder = app.town.cafes!.store.orders(cafeId!)[0];
   async function pointerTarget(kind: "machine" | "customer", target?: string) {
+    await phone(pa, false);
     await pa.locator("#world").scrollIntoViewIfNeeded();
     const canvas = pa.locator("#world canvas");
     await wait(
-      async () => !!(await canvas.getAttribute("data-machine")),
+      async () =>
+        !!(await canvas.getAttribute("data-machine")) &&
+        (await canvas.getAttribute("data-camera-settled")) === "true",
       "interaction projection",
     );
     const box = await canvas.boundingBox();
@@ -187,7 +200,6 @@ try {
         "[]",
     );
     return [
-      "kenney-character",
       "table_round_A",
       "chair_A",
       "kitchencounter_straight_A",
@@ -205,13 +217,17 @@ try {
     path: "test-results/cafe-online-desktop.png",
     fullPage: false,
   });
+  await phone(pa);
   await pa.locator('[data-action="close"]').click();
+  await phone(pa);
   await pa.locator('[data-action="feed"]').click();
   await wait(
     async () => app.town.cafes!.store.byOwner(aid).food === 4,
     "cat feeding failed",
   );
+  await phone(pa);
   await pa.locator("summary").first().click();
+  await phone(pa);
   await pa.locator('[data-action="decor"]').click();
   await wait(
     async () => app.town.cafes!.store.byOwner(aid).level === 2,
@@ -235,6 +251,7 @@ try {
     await pa.evaluate(() => document.documentElement.scrollWidth > innerWidth),
     false,
   );
+  await phone(pa);
   await pa.locator('[data-action="open"]').click();
   const mobileOrder = app.town.cafes!.store.orders(cafeId!)[0];
   const touch = await a.newCDPSession(pa);
@@ -261,10 +278,21 @@ try {
   await pa.waitForTimeout(300);
   point = await pointerTarget("machine");
   await touchPress(point);
-  await wait(
-    async () => !!app.town.residents.get(aid)!.work,
-    "touch hold must actually start",
-  );
+  try {
+    await wait(
+      async () => !!app.town.residents.get(aid)!.work,
+      "touch hold must actually start",
+    );
+  } catch (error) {
+    await pa.screenshot({ path: "test-results/cafe-touch-failure.png" });
+    console.log("Touch diagnostics", {
+      point,
+      state: app.town.residents.get(aid)!.state,
+      hint: await pa.locator("#interaction-hint").textContent(),
+      hit: await pa.locator("#world canvas").getAttribute("data-last-hit"),
+    });
+    throw error;
+  }
   await pa.waitForTimeout(650);
   await touchRelease();
   await wait(
@@ -311,30 +339,36 @@ try {
   );
   assert.equal(app.town.cafes!.store.byOwner(aid).coins, 129);
   await touch.detach();
+  await phone(pa);
   await pa.locator('[data-action="close"]').click();
+  await phone(pa);
   await pa.locator("summary").first().click();
+  await phone(pa);
   await pa.locator("summary").filter({ hasText: "Adopt a cat" }).click();
-  await pa.locator('[data-action="adopt"][data-target="4"]').click();
+  await phone(pa);
+  await pa.locator('[data-action="catSlot"]').click();
+  await pa.locator('[data-action="adopt"][data-target="0"]').click();
   await wait(
     async () => app.town.cafes!.store.byOwner(aid).cats.length === 2,
     "selected cat adoption",
   );
-  assert.equal(app.town.cafes!.store.byOwner(aid).cats[1].coat, 4);
-  assert.equal(app.town.cafes!.store.byOwner(aid).coins, 29);
+  assert.equal(app.town.cafes!.store.byOwner(aid).cats[1].coat, 0);
+  assert.equal(app.town.cafes!.store.byOwner(aid).coins, 19);
   await pa.locator("#world").scrollIntoViewIfNeeded();
   console.log(
-    "PASS: emulated touch cancellation/pickup/delivery, keyboard E hold, and selected calico adoption",
+    "PASS: emulated touch cancellation/pickup/delivery, keyboard E hold, and paid cat slot and selected basic adoption",
   );
   await pa.screenshot({
     path: "test-results/cafe-online-mobile.png",
     fullPage: true,
   });
+  await phone(pa);
   await pa.locator('[data-action="exit"]').click();
   await wait(
     async () => (await pa.locator("#app").getAttribute("data-area")) === "town",
     "exit route failed",
   );
-  assert.equal(app.town.cafes!.store.byOwner(aid).coins, 29);
+  assert.equal(app.town.cafes!.store.byOwner(aid).coins, 19);
   assert.deepEqual(errors, []);
   console.log(
     "PASS: cat food consumption, decoration purchase, saved coins after reload, mobile layout, exit to correct lot, no JS errors",

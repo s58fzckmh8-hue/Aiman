@@ -205,16 +205,17 @@ test("coat selection is durable and invalid designs cannot charge currency", () 
   const f = fixture();
   try {
     const { store } = f;
-    store.purchase("a", "adopt-design", "adopt", 4);
-    store.purchase("a", "adopt-design", "adopt", 4);
-    assert.equal(store.byOwner("a").cats[1].coat, 4);
-    assert.equal(store.byOwner("a").cats[1].name, "Maple");
-    assert.equal(store.byOwner("a").coins, 50);
+    store.buyCatSlot("a","design-slot");
+    store.purchase("a", "adopt-design", "adopt", 0);
+    store.purchase("a", "adopt-design", "adopt", 0);
+    assert.equal(store.byOwner("a").cats[1].coat, 0);
+    assert.equal(store.byOwner("a").cats[1].name, "Oyen");
+    assert.equal(store.byOwner("a").coins, 40);
     assert.throws(
       () => store.purchase("a", "adopt-invalid", "adopt", 999),
       /available cat/,
     );
-    assert.equal(store.byOwner("a").coins, 50);
+    assert.equal(store.byOwner("a").coins, 40);
   } finally {
     f.cafes.shutdown();
   }

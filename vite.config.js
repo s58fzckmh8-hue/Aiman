@@ -16,6 +16,9 @@ export default defineConfig({
     port: Number(process.env.VITE_PORT ?? 5173),
     strictPort: true,
     proxy,
+    fs: {
+      deny: [".env", ".env.*", "*.{crt,pem}", "**/.git/**", "**/.local/**"],
+    },
   },
   preview: { proxy },
   build: {

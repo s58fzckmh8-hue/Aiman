@@ -1,5 +1,22 @@
 # Validation ledger
 
+## V0.5 — living café (22 October 2026)
+
+Validated in Node 24 / Linux headless Chromium. All player saves used by automated checks are temporary fixtures.
+
+- Offline model suite: **3 passed**, no failures/skips.
+- Online unit/integration suite: **40 passed**, no failures/skips. New coverage includes recipe unlocks, atomic one-time goals, authentic v1 schema migration (including three legacy cats receiving three slots), reserved player seats on opening, ten cats spawning clear of furniture, sitting/standing, carried-cat identity and coffee exclusions, paid slots through the ten-slot limit, furniture inventory and placement, visitor supplies, bounded sprint, final-bowl retention and cancellation of newly obstructed walking routes.
+- Type checking and asset verification passed. **23 pinned CC0 GLBs**, exact file inventory and embedded-resource SHA-256 checks: **1,223,728 bytes**. The final production build passed with the existing engine-bundle-size advisory.
+- Café browser regression passed: two independent guests share an interior; real mouse hold/cancellation/refund and full brew/pickup/walk/delivery pay only the owner. Touch hold/cancel/pickup/delivery and keyboard E hold passed, followed by paid slot + selected Basic adoption, save reload, food, expansion, mobile overflow and exit. No JavaScript errors.
+- The final living-café browser suite passed after the wall-board/visitor-E refinements: physical chair click and articulated seated legs; E standing; actual cat pickup/rendered cuddle/floor put-down; O opening/closing; inventory purchase, placement and R rotation; visitor food; layout/wallet reload; 390 × 844 phone layout. No JavaScript errors.
+- The combined development launcher was started on **5174/3002** with a temporary profile store. Proxied health, guest session and authenticated WebSocket welcome passed. A dummy private-directory request demonstrated Vite serving `.local/`; adding an explicit deny rule changed that response to **403**, while public HTML remained **200**. No real private data was printed or used by that check.
+
+A clean frozen-lockfile reinstall also passed, followed by the offline suite, type check, all 40 online tests, all 23 asset checks and production build. This restricted cloud needs a writable npm cache (`npm ci --cache /tmp/miaw-npm-cache --no-audit --no-fund`); using the unwritable default cache initially failed. TLS and package-integrity checks remained enabled. The verified install script and combined-launcher startup instructions were saved to the cloud configuration draft; publication is a separate environment-settings action.
+
+A café browser run initially touched a machine projection before the post-reload/portrait camera had settled. The pointer helper now waits for the read-only rendered-camera readiness signal and still dispatches actual mouse/touch input; it does not call gameplay actions directly. The complete café regression then passed. Software-rendered reload fixtures use a longer session grace only in tests; production remains 15 seconds.
+
+The final multiplayer regression passed: bidirectional real movement, automatic reconnect, same-cookie tab replacement, grace expiry, returned guest identity, mobile controls and offline serving/feeding/save. The built-entry production smoke test passed with a real backend connection, WebGL rendering and offline customer service; no JavaScript errors. All three browser suites and the production smoke check completed successfully. No 5/10/20-player, physical phone, Firefox/Safari, hosted Internet, real ads or CrazyGames test is claimed. Homes, driving, shops, staff and desserts are still unimplemented. The additional archived models are not a completion claim for those systems.
+
 ## V0.4 — physical service and local CC0 artwork
 
 Validated in Node 24 / Linux Chromium with isolated guest cookies and temporary databases.

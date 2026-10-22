@@ -1,3 +1,6 @@
+import { shell } from "./shell.ts";
+import { CafeAudio } from "./audio.ts";
+import { reputation } from "../../shared/furniture.ts";
 import "./style.css";
 import { Interaction } from "./interaction.ts";
 import { Network, type Connection } from "./network.ts";
@@ -6,8 +9,13 @@ import { World } from "./world.ts";
 import type { PublicState } from "../../shared/protocol.ts";
 const $ = <T extends HTMLElement = HTMLElement>(s: string) =>
   document.querySelector<T>(s)!;
-$("#app").innerHTML =
-  `<header><a class="brand" href="./"><span class="brand-icon">🐾</span><div><b>kafe miaw<span style="color:#a0b283">.</span></b><small>A LITTLE COFFEE, A LOT OF CONNECTION</small></div></a><span class="edition">HANDS-ON CAFÉ · 03</span></header><main><section class="intro"><div><h1>A small town. A shared beginning.</h1><p>Take a stroll, meet a neighbor, make yourself at home.</p></div><div class="connection" role="status" aria-live="polite"><i id="dot" class="dot"></i><span id="connection-text">Ready when you are.</span></div></section><div class="layout"><section class="world-card"><div class="world-toolbar"><b>✦ <span id="town">Miaw Neighborhood</span></b><small id="location">Shared 3D town · two-player café build</small></div><div class="scene-wrap"><div id="world"></div><div class="world-prompt"><span id="interaction-hint" role="status">Click the ground to walk.</span><div id="brew-progress" class="brew-progress" hidden><i></i></div></div><div class="touch-pad" aria-label="Movement controls"><button data-dir="up" aria-label="Move forward">↑</button><button data-dir="left" aria-label="Move left">←</button><button data-dir="down" aria-label="Move backward">↓</button><button data-dir="right" aria-label="Move right">→</button></div><div id="overlay" class="overlay"><div class="welcome"><span class="paw">🐾</span><h2>Your next chapter starts here.</h2><p id="welcome-text">Join a real shared town as a guest. Explore together while we build the next chapter of Kafe Miaw.</p><button class="primary" id="join">Play Online →</button><p style="font-size:10px;margin-bottom:0">Guest identity stays in this browser.<br>No account or cross-device recovery yet.</p></div></div></div><div class="world-footer"><p><b>Click ground / WASD</b> to walk · <b>Hold machine / E</b> to brew<br>Click machine to pick up coffee, then click the matching customer nearby.</p><div><button id="camera" class="secondary">Reset camera</button> <button id="help" class="secondary">How to play</button> <button id="credits" class="secondary">Credits</button></div></div></section><aside><section id="cafe-controls" class="panel cafe-controls"></section><section class="panel"><div class="eyebrow">NEIGHBORS TOGETHER</div><div class="population"><span id="count">0</span> <small>/ <span id="capacity">2</span> connected</small></div><p>Real connections only. Players nearby appear in the town.</p><ul id="roster" class="roster" aria-label="Nearby players"></ul></section><section class="panel"><h2>Your little place</h2><div class="info-row"><span>Guest</span><b id="name">Not connected</b></div><div class="info-row"><span>Town</span><b>Town 001</b></div><div class="info-row"><span>Reserved lot</span><b id="lot">Join to reserve</b></div><p id="identity-note">Your guest profile is saved by the server. A lot is temporary, not your permanent property ID.</p><div id="notice" role="status"></div></section><section class="practice"><h2>A coffee break?</h2><p>Your original café is still here. Serve customers, care for cats and grow your café in a separate offline practice save.</p><a href="./practice.html" class="secondary">Open offline café →</a></section><p class="fine">This build tests two-player movement and reconnection. Twenty lots are reserved for future expansion. Run your own café, welcome visitors and care for your cats. Shops, home building, genetics and account linking are still planned.</p></aside></div><footer><span>KAFE MIAW © 2026 · ONLINE CAFÉ BUILD</span><span>Little steps. Shared adventures. ♡</span></footer></main><dialog id="how"><h2>Welcome to the neighborhood</h2><p>Choose Play Online to join Town 001. Move with WASD, arrow keys, or the on-screen arrows. Right-drag to rotate and scroll to zoom. Touch users can drag the scene to rotate.</p><p>This milestone supports two guests. Server-controlled movement keeps you inside the map and outside buildings. You can see nearby connected guests move in real time.</p><p>If your connection drops, your spot is held for 15 seconds. Return with this browser to reconnect. A new tab with the same guest replaces the previous connection.</p><p>Choose Walk to my café to travel to your door and enter. Open the café, then click the coffee machine to walk over. Hold the machine or E for four seconds while nearby. Releasing early cancels brewing and returns the bean. Click the machine or press E to pick up ready coffee. Walk to the matching customer and click them or press E to serve. Coffee cannot be made or delivered from the management panel. Customers pay after drinking. Coins, supplies, cats and upgrades are saved by the server. Neighbors can visit but cannot manage your café. The original offline practice save remains separate.</p><button id="close-help" class="primary">Let's explore</button></dialog><dialog id="art-credits"><h2>Made with a little help</h2><p>Character model and animations: Kenney (CC0). Restaurant and furniture models: Kay Lousberg / KayKit (CC0).</p><p>City buildings: KayKit City Builder Bits (CC0). Eight original Kafe Miaw cat coat designs and the espresso machine were created for this project.</p><p><a href="./assets/manifest.json" target="_blank" rel="noopener">Model sources & checksums</a> · <a href="./assets/licenses/kaykit-restaurant.txt" target="_blank" rel="noopener">KayKit license</a> · <a href="./assets/licenses/kenney-source.md" target="_blank" rel="noopener">Kenney asset notice</a></p><button id="close-credits" class="primary">Back to the café</button></dialog>`;
+$("#app").innerHTML = shell;
+$("#app").classList.add("management-hidden");
+const audio = new CafeAudio($("#sound"));
+let arranging = false;
+let latest: PublicState | undefined;
+let previousCoins: number | undefined;
+let lastMoment = "";
 let interaction: Interaction | undefined;
 let world: World | null = null;
 let available = true;
@@ -62,6 +70,10 @@ let cafePanel: CafePanel | undefined;
 const network = new Network({
   personal(cafe) {
     cafePanel?.update(cafe);
+    $("#hud-wallet").textContent = cafe.coins.toLocaleString() + " ◈";
+    if (previousCoins !== undefined && cafe.coins > previousCoins) audio.coin();
+    previousCoins = cafe.coins;
+    $("#hud-level").textContent = `Reputation ${reputation(cafe.served)}`;
   },
   result(result) {
     cafePanel?.result(result);
@@ -72,6 +84,7 @@ const network = new Network({
     if (s !== "connected") {
       cafePanel?.disconnected();
       interaction?.finish(false);
+      audio.brewing(false);
       $("#brew-progress").hidden = true;
     }
     $("#connection-text").textContent = message;
@@ -108,6 +121,45 @@ const network = new Network({
       : "Guest profile saved. Your first stroll awaits.";
   },
   snapshot(s) {
+    latest = s;
+    const me = s.players.find((p) => p.id === selfId);
+    audio.step(!!me?.moving);
+    audio.brewing(!!me?.work);
+    const own = s.cafe?.ownerId === selfId;
+    const buildButton = $("#build") as HTMLButtonElement;
+    buildButton.disabled = !own || !!s.cafe?.open;
+    if (arranging && (!own || s.cafe?.open)) setArranging(false);
+    const shift = s.cafe?.shift;
+    $("#shift-status").textContent =
+      shift && s.cafe?.open
+        ? `OPEN · ${shift.served} served · ${shift.earned} coins this shift`
+        : s.cafe
+          ? "Take your time. Make it your own."
+          : "Take a stroll. Find your little place.";
+    $("#next-step").textContent = arranging
+      ? "ARRANGE · Drag furniture · R rotate · Escape finish"
+      : me?.area === "town"
+        ? "FIRST STOP · Walk to your café and make yourself at home."
+        : s.cafe?.open
+          ? "CAFÉ OPEN · Choose an order, make the coffee, bring a little joy."
+          : "CAFÉ CLOSED · Sit, cuddle a cat, or arrange your space before opening.";
+    const event = s.cafe?.events?.at(-1);
+    if (event && event.id !== lastMoment && s.time - event.at < 5000) {
+      lastMoment = event.id;
+      $("#moment").textContent = event.message;
+      $("#moment").hidden = false;
+      setTimeout(() => {
+        $("#moment").hidden = true;
+      }, 5000);
+    }
+    const context = $("#context-action") as HTMLButtonElement;
+    context.hidden = !me?.sitting && !me?.carriedCatId;
+    context.textContent = me?.sitting ? "Stand up · E" : "Put down cat · E";
+    context.onclick = () => network.action(me?.sitting ? "stand" : "putCat");
+    const openButton = $("#open-shop") as HTMLButtonElement;
+    openButton.disabled = !own || !!me?.doorTransition;
+    openButton.textContent = s.cafe?.open ? "O · Close café" : "O · Open café";
+
     $("#app").dataset.area =
       s.players.find((p) => p.id === selfId)?.area ?? "town";
     world?.snapshot(s);
@@ -149,8 +201,74 @@ const controls = [
   "arrowleft",
   "arrowdown",
   "arrowright",
+  "shift",
 ];
-$("#join").onclick = () => void network.start();
+$("#join").onclick = () => {
+  audio.unlock();
+  void network.start();
+};
+window.addEventListener("pointerdown", () => audio.unlock(), { once: true });
+function setArranging(value: boolean) {
+  arranging = value;
+  interaction?.finish();
+  world?.setBuild(value);
+  $("#build").setAttribute("aria-pressed", String(value));
+  $("#rotate").hidden = !value;
+  $("#build-help").hidden = !value;
+  $("#build").textContent = value ? "Finish arranging" : "Arrange furniture";
+}
+$("#build").onclick = () => setArranging(!arranging);
+$("#cafe-controls").addEventListener("click", (e) => {
+  const button = (e.target as HTMLElement).closest<HTMLButtonElement>(
+    "button[data-place]",
+  );
+  if (!button || button.disabled) return;
+  setPhone(false);
+  setArranging(true);
+  world?.selectFurniture(button.dataset.place!);
+});
+$("#rotate").onclick = () => world?.rotateFurniture();
+function phoneOpen() {
+  return !$("#app").classList.contains("management-hidden");
+}
+function setPhone(open: boolean) {
+  $("#app").classList.toggle("management-hidden", !open);
+  $("#manage").setAttribute("aria-expanded", String(open));
+  if (open) {
+    keys.clear();
+    touch.clear();
+    interaction?.finish();
+    network.input(0, 0);
+  }
+}
+$("#manage").onclick = () => setPhone(!phoneOpen());
+$("#close-phone").onclick = () => setPhone(false);
+$("#open-shop").onclick = () => {
+  const me = latest?.players.find((p) => p.id === selfId);
+  if (latest?.cafe?.ownerId === selfId && me?.area !== "town")
+    network.action(latest.cafe.open ? "close" : "open");
+};
+const interactButton = $("#touch-interact") as HTMLButtonElement;
+interactButton.onpointerdown = (e) => {
+  e.preventDefault();
+  if (phoneOpen()) setPhone(false);
+  interactButton.setPointerCapture(e.pointerId);
+  interaction?.key();
+};
+interactButton.onpointerup =
+  interactButton.onpointercancel =
+  interactButton.onlostpointercapture =
+    () => interaction?.finish();
+const sprintButton = $("#sprint");
+sprintButton.onpointerdown = (e) => {
+  e.preventDefault();
+  touch.add("sprint");
+  sprintButton.setPointerCapture(e.pointerId);
+};
+sprintButton.onpointerup =
+  sprintButton.onpointercancel =
+  sprintButton.onlostpointercapture =
+    () => touch.delete("sprint");
 $("#camera").onclick = () => world?.resetCamera();
 $("#help").onclick = () => {
   keys.clear();
@@ -161,6 +279,58 @@ $("#help").onclick = () => {
 };
 $("#close-help").onclick = () => $<HTMLDialogElement>("#how").close();
 window.addEventListener("keydown", (e) => {
+  if (
+    e.target instanceof HTMLInputElement ||
+    e.target instanceof HTMLTextAreaElement
+  )
+    return;
+  if (e.key === "Escape") {
+    setArranging(false);
+    setPhone(false);
+    return;
+  }
+  if (
+    e.key.toLowerCase() === "c" &&
+    !e.repeat &&
+    !document.querySelector("dialog[open]")
+  ) {
+    e.preventDefault();
+    setPhone(!phoneOpen());
+    return;
+  }
+  if (
+    e.key.toLowerCase() === "o" &&
+    !e.repeat &&
+    !document.querySelector("dialog[open]")
+  ) {
+    e.preventDefault();
+    $("#open-shop").click();
+    return;
+  }
+  if (
+    e.key.toLowerCase() === "b" &&
+    !e.repeat &&
+    !document.querySelector("dialog[open]")
+  ) {
+    e.preventDefault();
+    setPhone(false);
+    if (!($("#build") as HTMLButtonElement).disabled) $("#build").click();
+    return;
+  }
+  if (phoneOpen()) return;
+  if (arranging) {
+    if (e.key.toLowerCase() === "r") {
+      e.preventDefault();
+      world?.rotateFurniture();
+    }
+    return;
+  }
+  if (e.key === "Tab" && !document.querySelector("dialog[open]")) {
+    e.preventDefault();
+    $("#manage").click();
+    return;
+  }
+
   if (
     e.key.toLowerCase() === "e" &&
     !e.repeat &&
@@ -215,11 +385,12 @@ const inputTimer = setInterval(() => {
     Number(has("s", "arrowdown", "down")) - Number(has("w", "arrowup", "up"));
   const d = world?.direction(x, z) ?? { x, z };
   const length = Math.max(1, Math.hypot(d.x, d.z));
-  network.input(d.x / length, d.z / length);
+  network.input(d.x / length, d.z / length, has("shift", "sprint"));
 }, 50);
 window.addEventListener("pagehide", () => {
   interaction?.finish();
   clearInterval(inputTimer);
   network.stop();
   world?.dispose();
+  audio.dispose();
 });

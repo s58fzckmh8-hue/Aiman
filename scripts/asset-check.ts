@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { resolve, sep } from "node:path";
 const root = resolve("public/assets");
@@ -36,8 +36,12 @@ for (const item of manifest) {
   assert.match(item.url, /raw.githubusercontent.com\/.*\/[0-9a-f]{40}\//);
   bytes += data.length;
 }
-assert.equal(manifest.length, 9);
-assert.ok(bytes < 500000);
+assert.equal(manifest.length, 23);
+assert.deepEqual(
+  (await readdir(root)).filter((file) => file.endsWith(".glb")).sort(),
+  manifest.map((item) => item.file).sort(),
+);
+assert.ok(bytes < 2000000);
 console.log(
   `PASS: ${manifest.length} pinned CC0 models, verified hashes and embedded resources; ${bytes} bytes total.`,
 );

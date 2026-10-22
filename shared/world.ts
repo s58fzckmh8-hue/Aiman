@@ -45,13 +45,15 @@ export function move(
   dx: number,
   dz: number,
   seconds: number,
+  speedMultiplier = 1,
 ) {
   const length = Math.hypot(dx, dz);
   if (length > 1) {
     dx /= length;
     dz /= length;
   }
-  const distance = WORLD.speed * Math.min(0.1, Math.max(0, seconds));
+  const distance =
+    WORLD.speed * speedMultiplier * Math.min(0.1, Math.max(0, seconds));
   const steps = Math.max(1, Math.ceil(distance / 0.15));
   let { x, z } = position;
   for (let i = 0; i < steps; i++) {

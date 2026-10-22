@@ -1,6 +1,7 @@
+import { doorway } from "../shared/world.ts";
 import { randomUUID } from "node:crypto";
 import { WebSocket } from "ws";
-import { step } from "../shared/navigation.ts";
+import { step, route, roomBlocked } from "../shared/navigation.ts";
 import type { Point } from "../shared/navigation.ts";
 import { Cafes, type Actor } from "./cafes.ts";
 import type { Action } from "../shared/cafe.ts";
@@ -9,7 +10,7 @@ import type { Profile } from "./profiles.ts";
 type Resident = Actor & {
   state: PlayerState;
   socket: WebSocket | null;
-  input: { x: number; z: number; seq: number; at: number };
+  input: { x: number; z: number; seq: number; at: number; sprint?: boolean };
   expires: number;
   window: number;
   messages: number;
@@ -61,8 +62,8 @@ export class Town {
           sessionId: randomUUID(),
           name: profile.name,
           lot,
-          x: -3 + lot * 3,
-          z: 3,
+          x: this.cafes ? doorway(lot).x + 1.5 : -3 + lot * 3,
+          z: this.cafes ? doorway(lot).z + (lot < 10 ? 2.5 : -2.5) : 3,
           rotation: 0,
           moving: false,
           connected: true,
@@ -114,6 +115,12 @@ export class Town {
     const r = this.residents.get(id);
     if (!r || r.socket !== ws) return;
     this.cafes?.cancelWork(r);
+    this.cafes?.stand(r);
+    if (r.state.carriedCatId && this.cafes) {
+      const cafe = this.cafes.store.byOwner(id);
+      this.cafes.life.drop(cafe, r.state.carriedCatId, r.state, now);
+    }
+    r.state.carriedCatId = undefined;
     r.state.carriedOrderId = undefined;
     this.cafes?.disconnect(id);
     r.pending = undefined;
@@ -178,6 +185,15 @@ export class Town {
         )
       )
         return;
+      if (r.state.doorTransition && now < r.state.doorTransition.endsAt) {
+        this.send(ws, {
+          type: "result",
+          requestId: msg.requestId,
+          ok: false,
+          message: "Walking through the doorway…",
+        });
+        return;
+      }
       if (r.pending)
         this.send(ws, {
           type: "result",
@@ -210,7 +226,10 @@ export class Town {
       !Number.isFinite(msg.z) ||
       Math.abs(msg.x) > 1 ||
       Math.abs(msg.z) > 1 ||
-      Object.keys(msg).some((k) => !["type", "seq", "x", "z"].includes(k))
+      (msg.sprint !== undefined && typeof msg.sprint !== "boolean") ||
+      Object.keys(msg).some(
+        (k) => !["type", "seq", "x", "z", "sprint"].includes(k),
+      )
     )
       return;
     if ((msg.x !== 0 || msg.z !== 0) && r.pending) {
@@ -224,6 +243,7 @@ export class Town {
       r.path = [];
     }
     if (msg.x !== 0 || msg.z !== 0) {
+      this.cafes?.stand(r);
       r.path = [];
       if (r.work) {
         const stopped = this.cafes?.cancelWork(r);
@@ -236,7 +256,13 @@ export class Town {
           });
       }
     }
-    r.input = { x: msg.x, z: msg.z, seq: msg.seq, at: now };
+    r.input = {
+      x: msg.x,
+      z: msg.z,
+      seq: msg.seq,
+      at: now,
+      sprint: msg.sprint === true,
+    };
   }
   private execute(r: Resident, msg: Action, now: number) {
     if (!r.socket || !this.cafes) return;
@@ -278,6 +304,8 @@ export class Town {
     this.expire(now);
     this.tickCount++;
     for (const r of this.residents.values()) {
+      if (r.state.doorTransition && now >= r.state.doorTransition.endsAt)
+        r.state.doorTransition = undefined;
       const workResult = this.cafes?.workTick(r, now);
       if (workResult && r.socket)
         this.send(r.socket, {
@@ -286,7 +314,38 @@ export class Town {
           ok: workResult.ok,
           message: workResult.message,
         });
-      const active = r.state.connected && now - r.input.at < 350;
+      const active =
+        r.state.connected && now - r.input.at < 350 && !r.state.doorTransition;
+      const room =
+        this.cafes && r.state.area && r.state.area !== "town"
+          ? this.cafes.store.get(r.state.area)
+          : undefined;
+      if (
+        room &&
+        r.path?.length &&
+        roomBlocked(r.path[0].x, r.path[0].z, room.level, room.layout)
+      ) {
+        try {
+          r.path = route(
+            r.state,
+            r.path.at(-1)!,
+            true,
+            room.level,
+            room.layout,
+          );
+        } catch {
+          if (r.socket)
+            this.send(r.socket, {
+              type: "result",
+              requestId: r.pending?.requestId ?? `route:${this.tickCount}`,
+              ok: false,
+              message:
+                "That space changed. Choose a clear route and try again.",
+            });
+          r.path = [];
+          r.pending = undefined;
+        }
+      }
       let x = active ? r.input.x : 0,
         z = active ? r.input.z : 0;
       if (r.state.connected && r.path?.length) {
@@ -305,8 +364,13 @@ export class Town {
         z,
         dt,
         !!r.state.area && r.state.area !== "town",
-        this.cafes && r.state.area && r.state.area !== "town"
-          ? this.cafes.store.get(r.state.area).level
+        room?.level ?? 1,
+        room?.layout,
+        active &&
+          r.input.sprint &&
+          !r.state.carriedOrderId &&
+          !r.state.carriedCatId
+          ? 1.6
           : 1,
       );
       r.state.moving = pos.x !== r.state.x || pos.z !== r.state.z;

@@ -1,13 +1,25 @@
 import { blocked, move, WORLD } from "./world.ts";
-import { ROOM, ROOM_OBSTACLES } from "./cafe.ts";
+import { roomBounds } from "./cafe.ts";
+import { DEFAULT_FURNITURE, footprints, type Furniture } from "./furniture.ts";
 export type Point = { x: number; z: number };
-const plantObstacles = [-5, 5].map((x) => ({ x, z: 3.5, w: 0.65, d: 0.65 }));
-const layouts = [
-  ROOM_OBSTACLES,
-  [...ROOM_OBSTACLES, ...plantObstacles],
-  [...ROOM_OBSTACLES, ...plantObstacles, { x: 5.3, z: -3.7, w: 0.6, d: 1.4 }],
-];
-export function roomBlocked(x: number, z: number, level = 1) {
+const cache = new WeakMap<
+  Furniture[],
+  Map<number, ReturnType<typeof footprints>>
+>();
+function obstacles(layout: Furniture[], level: number) {
+  let levels = cache.get(layout);
+  if (!levels) cache.set(layout, (levels = new Map()));
+  let boxes = levels.get(level);
+  if (!boxes) levels.set(level, (boxes = footprints(layout, level)));
+  return boxes;
+}
+export function roomBlocked(
+  x: number,
+  z: number,
+  level = 1,
+  layout: Furniture[] = DEFAULT_FURNITURE,
+) {
+  const ROOM = roomBounds(level);
   return (
     !Number.isFinite(x) ||
     !Number.isFinite(z) ||
@@ -15,7 +27,7 @@ export function roomBlocked(x: number, z: number, level = 1) {
     x > ROOM.maxX - 0.38 ||
     z < ROOM.minZ + 0.38 ||
     z > ROOM.maxZ - 0.38 ||
-    layouts[Math.max(0, Math.min(2, level - 1))].some(
+    obstacles(layout, level).some(
       (b) =>
         x > b.x - b.w / 2 - 0.38 &&
         x < b.x + b.w / 2 + 0.38 &&
@@ -31,16 +43,18 @@ export function step(
   dt: number,
   inside = false,
   level = 1,
+  layout: Furniture[] = DEFAULT_FURNITURE,
+  speedMultiplier = 1,
 ) {
-  if (!inside) return move(p, dx, dz, dt);
+  if (!inside) return move(p, dx, dz, dt, speedMultiplier);
   const length = Math.max(1, Math.hypot(dx, dz));
-  const d = WORLD.speed * Math.min(0.1, Math.max(0, dt));
+  const d = WORLD.speed * speedMultiplier * Math.min(0.1, Math.max(0, dt));
   let { x, z } = p;
   for (let i = 0; i < 4; i++) {
     const nx = x + ((dx / length) * d) / 4;
-    if (!roomBlocked(nx, z, level)) x = nx;
+    if (!roomBlocked(nx, z, level, layout)) x = nx;
     const nz = z + ((dz / length) * d) / 4;
-    if (!roomBlocked(x, nz, level)) z = nz;
+    if (!roomBlocked(x, nz, level, layout)) z = nz;
   }
   return { x, z };
 }
@@ -50,10 +64,11 @@ export function route(
   to: Point,
   inside = false,
   level = 1,
+  layout: Furniture[] = DEFAULT_FURNITURE,
 ): Point[] {
   const cell = inside ? 0.5 : 1;
   const isBlocked = inside
-    ? (x: number, z: number) => roomBlocked(x, z, level)
+    ? (x: number, z: number) => roomBlocked(x, z, level, layout)
     : blocked;
   if (isBlocked(to.x, to.z)) throw Error("That destination is blocked.");
   const key = (x: number, z: number) => `${x},${z}`;

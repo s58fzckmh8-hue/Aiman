@@ -128,13 +128,13 @@ export class Network {
       Math.min(500 * 2 ** (this.attempts - 1), 4000),
     );
   }
-  input(x: number, z: number) {
+  input(x: number, z: number, sprint = false) {
     if (
       this.state === "connected" &&
       this.socket?.readyState === WebSocket.OPEN
     )
       this.socket.send(
-        JSON.stringify({ type: "input", seq: this.sequence++, x, z }),
+        JSON.stringify({ type: "input", seq: this.sequence++, x, z, sprint }),
       );
   }
   action(action: Action["action"], target?: string) {

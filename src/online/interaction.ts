@@ -1,11 +1,28 @@
 import type { Network } from "./network.ts";
 import type { PublicState, PlayerState } from "../../shared/protocol.ts";
 import type { ActionResult } from "../../shared/cafe.ts";
-import { STATION, SERVICE_POINTS } from "../../shared/cafe.ts";
+import { STATION } from "../../shared/cafe.ts";
+import {
+  servicePoint,
+  chair,
+  DEFAULT_FURNITURE,
+} from "../../shared/furniture.ts";
+import { recipe, customerProfile } from "../../shared/experience.ts";
+import { doorway } from "../../shared/world.ts";
 export type WorldHit = {
-  kind: "floor" | "machine" | "customer" | "door" | "exit" | "cat";
+  kind:
+    | "floor"
+    | "machine"
+    | "customer"
+    | "door"
+    | "exit"
+    | "cat"
+    | "chair"
+    | "bowl"
+    | "furniture";
   target?: string;
   point?: { x: number; z: number };
+  rotation?: number;
 };
 export class Interaction {
   private noticeUntil = 0;
@@ -16,6 +33,7 @@ export class Interaction {
   private snapshot?: PublicState;
   private self?: PlayerState;
   private active?: string;
+  private selectedOrder?: string;
   private pulse: ReturnType<typeof setInterval> | undefined;
   constructor(
     private network: Network,
@@ -36,7 +54,13 @@ export class Interaction {
       this.progress.style.setProperty("--progress", `${ratio * 100}%`);
       this.hint.textContent = `Brewing coffee… ${Math.floor(ratio * 100)}% · keep holding`;
     } else if (performance.now() < this.noticeUntil) return;
-    else if (this.self?.carriedOrderId) {
+    else if (this.self?.sitting)
+      this.hint.textContent =
+        "A little moment to yourself. Press E or move to stand up.";
+    else if (this.self?.carriedCatId) {
+      const cat = s.cafe?.cats.find((c) => c.id === this.self?.carriedCatId);
+      this.hint.textContent = `${cat?.name ?? "Your cat"} is in your arms. Walk together, or press E to put them down.`;
+    } else if (this.self?.carriedOrderId) {
       const order = s.cafe?.orders.find(
         (o) => o.id === this.self!.carriedOrderId,
       );
@@ -85,8 +109,35 @@ export class Interaction {
       this.network.action("exit");
       return;
     }
+    if (hit.kind === "furniture" && hit.point) {
+      this.network.action(
+        "moveFurniture",
+        JSON.stringify({
+          id: hit.target,
+          ...hit.point,
+          rotation: hit.rotation ?? 0,
+          placed: true,
+        }),
+      );
+      return;
+    }
+    if (hit.kind === "chair") {
+      this.network.action(p.sitting ? "stand" : "sit", hit.target);
+      return;
+    }
+    if (hit.kind === "bowl") {
+      this.network.action("feed");
+      return;
+    }
     if (hit.kind === "cat") {
-      this.network.action("pet");
+      this.network.action(
+        s.cafe?.ownerId !== p.id
+          ? "pet"
+          : p.carriedCatId
+            ? "putCat"
+            : "pickCat",
+        hit.target,
+      );
       return;
     }
     if (s.cafe?.ownerId !== p.id) {
@@ -111,7 +162,10 @@ export class Interaction {
         return;
       }
       if (this.active) return;
-      const order = s.cafe?.orders.find((o) => o.status === "WAITING");
+      const order =
+        s.cafe?.orders.find(
+          (o) => o.id === this.selectedOrder && o.status === "WAITING",
+        ) ?? s.cafe?.orders.find((o) => o.status === "WAITING");
       if (!order) {
         this.note(
           "No waiting coffee orders. Open your café to welcome customers.",
@@ -129,10 +183,13 @@ export class Interaction {
       const order = s.cafe?.orders.find((o) => o.id === hit.target);
       if (!order) return;
       if (p.carriedOrderId !== order.id) {
-        this.note("Pick up this customer’s coffee at the machine first.");
+        this.selectedOrder = order.id;
+        this.note(
+          `${customerProfile(order.id).name} would like ${recipe(order.recipe).name.toLowerCase()}. Hold the machine to make this order.`,
+        );
         return;
       }
-      const point = SERVICE_POINTS[order.seat];
+      const point = servicePoint(s.cafe?.layout, order.seat);
       if (Math.hypot(p.x - point.x, p.z - point.z) > 1.5) {
         this.network.action("approach", order.id);
         this.note("Walking to the customer. Click them again when you arrive.");
@@ -142,16 +199,74 @@ export class Interaction {
   key() {
     const p = this.self,
       s = this.snapshot;
-    if (!p || !s?.cafe) return;
+    if (!p || !s) return;
+    if (p.area === "town") {
+      const property = s.properties?.find((prop) => {
+        const door = doorway(prop.lot);
+        return Math.hypot(p.x - door.x, p.z - door.z) < 2;
+      });
+      if (property) this.network.action("enter", property.cafeId);
+      else this.note("Walk up to an occupied café door and press E.");
+      return;
+    }
+    if (!s.cafe) return;
+    if (
+      Math.hypot(p.x, p.z - 4) < 0.9 &&
+      !p.carriedCatId &&
+      !p.carriedOrderId &&
+      !p.sitting
+    ) {
+      this.network.action("exit");
+      return;
+    }
+    if (p.sitting) {
+      this.network.action("stand");
+      return;
+    }
+    if (p.carriedCatId) {
+      this.network.action("putCat");
+      return;
+    }
     if (p.carriedOrderId) {
       const o = s.cafe.orders.find((o) => o.id === p.carriedOrderId);
       if (o) this.handle({ kind: "customer", target: o.id }, "press");
     } else if (Math.hypot(p.x - STATION.x, p.z - STATION.z) <= 1.4)
       this.handle({ kind: "machine" }, "press");
-    else
-      this.note(
-        "Walk to the coffee machine first. Click the floor or use WASD.",
+    else {
+      const layout = s.cafe.layout ?? DEFAULT_FURNITURE;
+      const nearby = layout
+        .filter(
+          (f) =>
+            f.placed !== false && (f.kind === "dining" || f.kind === "sofa"),
+        )
+        .flatMap((f) =>
+          (f.kind === "sofa" ? ["0", "1"] : ["front", "back"]).map((which) => ({
+            id: `${f.id}:${which}`,
+            seat: chair(layout, `${f.id}:${which}`)!,
+          })),
+        )
+        .find(
+          (s) =>
+            Math.hypot(p.x - s.seat.approach.x, p.z - s.seat.approach.z) < 1.1,
+        );
+      if (nearby) {
+        this.network.action("sit", nearby.id);
+        return;
+      }
+      const cat = s.cafe.catPoses?.find(
+        (cat) => cat.y < 1.1 && Math.hypot(p.x - cat.x, p.z - cat.z) < 1.4,
       );
+      if (cat) {
+        this.network.action(
+          s.cafe.ownerId === p.id ? "pickCat" : "pet",
+          cat.id,
+        );
+        return;
+      }
+      this.note(
+        "Click a chair to sit, a cat to pick them up, or walk to the coffee machine.",
+      );
+    }
   }
   finish(send = true) {
     if (this.active && send) this.network.work(this.active, "stop");

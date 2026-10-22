@@ -4,6 +4,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { GameStore } from "./game-store.ts";
+import { recipe } from "../shared/experience.ts";
 import { Cafes, type Actor } from "./cafes.ts";
 import { doorway } from "../shared/world.ts";
 import { route, roomBlocked, step } from "../shared/navigation.ts";
@@ -101,11 +102,16 @@ test("purchases are atomic, idempotent, capacity checked and cannot overspend", 
       () => s.purchase("a", "purchase-1", "food"),
       /another action/,
     );
+    for(let n=0;n<2;n++){
+      const time=1000+n*10000,id=s.createOrder(s.byOwner("a").id,time)!;
+      s.prepare("a",`fund-brew-${n}`,id,time);s.advance(s.byOwner("a").id,time+4001);s.pickup("a",`fund-pick-${n}`,id);s.serve("a",`fund-serve-${n}`,id,time+4002);s.advance(s.byOwner("a").id,time+7003);
+    }
+    s.buyCatSlot("a","purchase-slot");
     s.purchase("a", "purchase-2", "adopt");
     assert.equal(s.byOwner("a").cats.length, 2);
     assert.equal(new Set(s.byOwner("a").cats.map((c) => c.id)).size, 2);
     assert.throws(() => s.purchase("a", "purchase-3", "decor"), /Not enough/);
-    assert.equal(s.byOwner("a").coins, 10);
+    assert.equal(s.byOwner("a").coins, 26);
     assert.equal(s.byOwner("a").level, 1);
     s.care("a", "feed-0001", true);
     s.care("a", "feed-0001", true);
@@ -190,6 +196,7 @@ test("database failure after a debit rolls back coins, adoption and ledger toget
   const s = new GameStore(":memory:");
   try {
     s.ensure("a");
+    s.buyCatSlot("a","rollback-slot");
     (s as any).db.exec(
       "CREATE TRIGGER fail_adoption BEFORE INSERT ON cats BEGIN SELECT RAISE(ABORT,'test database failure'); END;",
     );
@@ -197,11 +204,11 @@ test("database failure after a debit rolls back coins, adoption and ledger toget
       () => s.purchase("a", "rollback-1", "adopt"),
       /test database failure/,
     );
-    assert.equal(s.byOwner("a").coins, 150);
+    assert.equal(s.byOwner("a").coins, 100);
     assert.equal(s.byOwner("a").cats.length, 1);
     assert.equal(
       (s as any).db.prepare("SELECT COUNT(*) AS n FROM ledger").get().n,
-      0,
+      1,
     );
   } finally {
     s.close();
@@ -218,13 +225,16 @@ test("three unique cats and maximum decorations enforce capacity before charging
         time = 1000 + n * 10000,
         id = s.createOrder(c.id, time)!;
       s.prepare("a", "prepare-" + n, id, time);
-      s.advance(c.id, time + 4001);
+      const duration=recipe(s.orders(c.id).find(o=>o.id===id)!.recipe).brewMs;
+      s.advance(c.id, time + duration + 1);
       s.pickup("a", "pickup-" + n, id);
-      s.serve("a", "serve-" + n, id, time + 4100);
-      s.advance(c.id, time + 7101);
+      s.serve("a", "serve-" + n, id, time + duration + 100);
+      s.advance(c.id, time + duration + 3101);
     };
     for (let i = 0; i < 12; i++) sale();
     s.purchase("a", "restock-001", "beans");
+    s.buyCatSlot("a","slot-two");
+    s.buyCatSlot("a","slot-three");
     s.purchase("a", "adoption-a", "adopt");
     s.purchase("a", "adoption-b", "adopt");
     assert.equal(s.byOwner("a").cats.length, 3);

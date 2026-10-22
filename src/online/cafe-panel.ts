@@ -6,12 +6,29 @@ import type {
   Property,
 } from "../../shared/cafe.ts";
 import type { PublicState } from "../../shared/protocol.ts";
+import {
+  GOALS,
+  RECIPES,
+  recipe,
+  customerProfile,
+  patience,
+} from "../../shared/experience.ts";
+import { FURNITURE_SHOP, reputation } from "../../shared/furniture.ts";
+import {
+  RARITIES,
+  CAT_PRICES,
+  CAT_BONUSES,
+  slotCost,
+  slotLimit,
+} from "../../shared/cat-collection.ts";
 export class CafePanel {
   private personal?: Cafe;
   private snapshot?: PublicState;
   private pending = false;
+  private traveling = false;
   private last = "";
-  private message = "Walk to your café to begin your first shift.";
+  private message =
+    "Your café is ready. Use E nearby to interact; O opens or closes the café.";
   constructor(
     private host: HTMLElement,
     private self: () => string,
@@ -72,7 +89,7 @@ export class CafePanel {
     b.dataset.action = action;
     if (target) b.dataset.target = target;
     b.textContent = label;
-    b.disabled = disabled || this.pending;
+    b.disabled = disabled || this.pending || this.traveling;
     return b;
   }
   private text(tag: string, text: string, parent: HTMLElement, className = "") {
@@ -88,17 +105,36 @@ export class CafePanel {
     if (!c || !s) return;
     const self = s.players.find((p) => p.id === this.self());
     if (!self) return;
+    this.traveling =
+      !!self.doorTransition && s.time < self.doorTransition.endsAt;
     const key = JSON.stringify([
       c,
-      s.cafe,
+      s.cafe && {
+        open: s.cafe.open,
+        level: s.cafe.level,
+        orders: s.cafe.orders.map((o) => ({
+          ...o,
+          patience: Math.floor(patience(o, s.time) * 20),
+        })),
+        shift: s.cafe.shift,
+      },
       s.properties,
       self.area,
+      this.traveling,
       this.pending,
       this.message,
     ]);
     if (key === this.last) return;
     this.last = key;
-    const suppliesOpen = !!this.host.querySelector("details[open]");
+    const suppliesOpen = !!this.host.querySelector(
+      "details[data-section='supplies'][open]",
+    );
+    const inventoryOpen = !!this.host.querySelector(
+      "details[data-section='inventory'][open]",
+    );
+    const adoptionOpen = !!this.host.querySelector(
+      "details[data-section='adoption'][open]",
+    );
     this.host.replaceChildren();
     const inside = self.area && self.area !== "town",
       own = inside && self.area === c.id;
@@ -106,7 +142,7 @@ export class CafePanel {
     this.text("div", c.coins.toLocaleString() + " ◈", this.host, "wallet");
     this.text(
       "p",
-      `Level ${c.level} · ${c.served} customers served · ${c.revenue} lifetime revenue`,
+      `Reputation ${reputation(c.served)} · Décor ${c.level} · ${c.served} customers served`,
       this.host,
     );
     const note = this.text("p", this.message, this.host, "action-notice");
@@ -144,6 +180,15 @@ export class CafePanel {
           `🐾 ${cat.name} · Happiness ${cat.happiness}%`,
           this.host,
         );
+      this.host.append(
+        this.button("Pet the cats", "pet"),
+        this.button(
+          "Share 1 cat food from your bag",
+          "feed",
+          undefined,
+          c.food < 1,
+        ),
+      );
       return;
     }
     const open = s.cafe?.open;
@@ -158,6 +203,15 @@ export class CafePanel {
       this.host,
     );
     const orders = s.cafe?.orders ?? [];
+    if (s.cafe?.shift) {
+      const shift = s.cafe.shift;
+      this.text(
+        "p",
+        `${open ? "This shift" : "Last shift"}: ${shift.served} served · ${shift.earned} coins · ${shift.missed} missed`,
+        this.host,
+        "shift-report",
+      );
+    }
     if (!orders.length)
       this.text(
         "p",
@@ -170,12 +224,17 @@ export class CafePanel {
       const row = document.createElement("div");
       row.className = "order-row";
       row.dataset.orderId = o.id;
-      this.text("b", `Table ${o.seat + 1} · Black coffee`, row);
+      this.text(
+        "b",
+        `${customerProfile(o.id).name} · Table ${o.seat + 1}`,
+        row,
+      );
+      this.text("small", recipe(o.recipe).name, row);
       this.text(
         "small",
         {
           WAITING: "Waiting for coffee",
-          PREPARING: "Brewing · 4 seconds",
+          PREPARING: `Brewing · ${recipe(o.recipe).brewMs / 1000} seconds`,
           READY: "Ready to serve",
           CARRIED: "Coffee being carried to the table",
           DRINKING: "Enjoying coffee · payment shortly",
@@ -184,16 +243,40 @@ export class CafePanel {
         }[o.status],
         row,
       );
+      if (!["DRINKING", "PAID", "CANCELLED"].includes(o.status)) {
+        const bar = document.createElement("progress");
+        bar.max = 60;
+        bar.value = Math.round(patience(o, s.time) * 60);
+        bar.setAttribute(
+          "aria-label",
+          `${customerProfile(o.id).name}'s remaining patience`,
+        );
+        row.append(bar);
+      }
       this.host.append(row);
     }
     this.text("h2", "Your furry family", this.host);
-    for (const cat of c.cats)
-      this.text("p", `🐈 ${cat.name} · Happiness ${cat.happiness}%`, this.host);
+    for (const cat of c.cats) {
+      const row = document.createElement("div");
+      row.className = "cat-row";
+      this.text("b", `🐾 ${cat.name}`, row);
+      this.text(
+        "small",
+        `${RARITIES[cat.coat]} · ${CAT_DESIGNS[cat.coat]?.name ?? "Cat"} · ${cat.happiness}% happy`,
+        row,
+      );
+      row.append(
+        this.button(`Cuddle ${cat.name}`, "pickCat", cat.id),
+        this.button(`Pet ${cat.name}`, "pet", cat.id),
+      );
+      this.host.append(row);
+    }
     this.host.append(
       this.button("Walk over & pet cats", "pet"),
       this.button("Feed cats · 1 food", "feed", undefined, c.food < 1),
     );
     const details = document.createElement("details");
+    details.dataset.section = "supplies";
     details.open = suppliesOpen;
     const summary = document.createElement("summary");
     summary.textContent = "Supplies & café upgrades";
@@ -207,7 +290,7 @@ export class CafePanel {
       ),
       this.button("3 cat food · 15 coins", "food", undefined, c.coins < 15),
       this.button(
-        `Decorate · ${80 * c.level} coins`,
+        `Expand & decorate · ${80 * c.level} coins`,
         "decor",
         undefined,
         c.coins < 80 * c.level || c.level >= 3,
@@ -220,20 +303,118 @@ export class CafePanel {
       ),
     );
     const adoption = document.createElement("details");
+    adoption.dataset.section = "adoption";
+    adoption.open = adoptionOpen;
     const adoptionSummary = document.createElement("summary");
-    adoptionSummary.textContent = `Adopt a cat · ${c.cats.length}/3 slots · ${100 * c.cats.length} coins`;
+    adoptionSummary.textContent = `Adopt a cat · ${c.cats.length}/${c.catSlots} slots · max 10 in café`;
     adoption.append(adoptionSummary);
+    adoption.append(
+      this.button(
+        `Add slot ${c.catSlots + 1} · ${slotCost(c.catSlots)} coins`,
+        "catSlot",
+        undefined,
+        c.catSlots >= slotLimit(c.level) || c.coins < slotCost(c.catSlots),
+      ),
+    );
+    this.text(
+      "p",
+      `Current space supports ${slotLimit(c.level)} slots. Expand to support 6, then 10. Healthy rarer cats improve tips and attract customers.`,
+      adoption,
+    );
     for (const [i, design] of CAT_DESIGNS.entries())
       adoption.append(
         this.button(
-          design.name,
+          `${design.name} · ${RARITIES[i]} · ${CAT_PRICES[i]} coins${CAT_BONUSES[i] ? ` · +${CAT_BONUSES[i]} charm` : ""}`,
           "adopt",
           String(i),
-          c.coins < 100 * c.cats.length || c.cats.length >= 3,
+          c.coins < CAT_PRICES[i] || c.cats.length >= c.catSlots,
         ),
       );
     details.append(adoption);
     this.host.append(details);
+    const inventory = document.createElement("details");
+    inventory.dataset.section = "inventory";
+    inventory.open = inventoryOpen;
+    const invSummary = document.createElement("summary");
+    invSummary.textContent = "Furniture inventory & MEOKEA";
+    inventory.append(invSummary);
+    for (const f of c.layout.filter((f) => f.level <= c.level)) {
+      const row = document.createElement("div");
+      row.className = "inventory-row";
+      this.text(
+        "small",
+        `${f.kind} · ${f.placed === false ? "In inventory" : "In café"}`,
+        row,
+      );
+      const place = document.createElement("button");
+      place.className = "secondary";
+      place.textContent = f.placed === false ? "Place in room" : "Rearrange";
+      place.dataset.place = f.id;
+      place.disabled = !!open;
+      row.append(place);
+      if (f.placed !== false)
+        row.append(
+          this.button(
+            "Store",
+            "moveFurniture",
+            JSON.stringify({
+              id: f.id,
+              x: Math.round(f.x * 2) / 2,
+              z: Math.round(f.z * 2) / 2,
+              rotation: f.rotation,
+              placed: false,
+            }),
+            !!open,
+          ),
+        );
+      inventory.append(row);
+    }
+    this.text(
+      "p",
+      "MEOKEA delivery · owned items go into inventory before placement.",
+      inventory,
+    );
+    for (const item of FURNITURE_SHOP)
+      inventory.append(
+        this.button(
+          `${item.name} · ${item.price} coins`,
+          "buyFurniture",
+          item.id,
+          c.coins < item.price,
+        ),
+      );
+    this.host.append(inventory);
+    this.text("h2", "A little something to work towards", this.host);
+    for (const goal of GOALS) {
+      const row = document.createElement("div");
+      row.className = "goal-row";
+      this.text("b", goal.title, row);
+      this.text(
+        "small",
+        `${goal.description} · ${Math.min(goal.target, goal.progress(c))}/${goal.target}`,
+        row,
+      );
+      row.append(
+        this.button(
+          c.claimed.includes(goal.id)
+            ? "Collected ✓"
+            : `Collect ${goal.reward} coins`,
+          "claim",
+          goal.id,
+          c.claimed.includes(goal.id) || goal.progress(c) < goal.target,
+        ),
+      );
+      this.host.append(row);
+    }
+    this.text("h2", "Your coffee notebook", this.host);
+    for (const drink of RECIPES)
+      this.text(
+        "p",
+        c.served >= drink.unlock
+          ? `☕ ${drink.name} · ${drink.brewMs / 1000}s brew`
+          : `🔒 ${drink.name} · serve ${drink.unlock} customers to unlock`,
+        this.host,
+      );
     this.text(
       "p",
       "Leaving or disconnecting closes your café. Unpaid orders are cancelled and reserved beans are returned. Paid orders stay saved.",

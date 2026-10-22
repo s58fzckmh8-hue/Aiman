@@ -12,6 +12,16 @@ export type PlayerState = {
   color: number;
   area?: string;
   carriedOrderId?: string;
+  carriedCatId?: string;
+  sitting?: { id: string; rotation: number; returnX: number; returnZ: number };
+  doorTransition?: {
+    kind: "enter" | "exit";
+    lot: number;
+    fromX: number;
+    fromZ: number;
+    startedAt: number;
+    endsAt: number;
+  };
   work?: { startedAt: number; endsAt: number; orderId: string };
 };
 export type PublicState = {

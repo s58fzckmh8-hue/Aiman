@@ -3,7 +3,19 @@ import { DatabaseSync } from "node:sqlite";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { randomUUID } from "node:crypto";
-import { CATALOG, type Cafe, type Cat, type Order } from "../shared/cafe.ts";
+import { CATALOG, type Cafe, type Order } from "../shared/cafe.ts";
+import { RECIPES, recipe, GOALS, seed } from "../shared/experience.ts";
+import {
+  DEFAULT_FURNITURE,
+  FURNITURE_SHOP,
+  type Furniture,
+} from "../shared/furniture.ts";
+import {
+  CAT_PRICES,
+  activeCatBonus,
+  slotCost,
+  slotLimit,
+} from "../shared/cat-collection.ts";
 export class GameStore {
   private db: DatabaseSync;
   constructor(path: string) {
@@ -12,7 +24,7 @@ export class GameStore {
     const version = Number(
       this.db.prepare("PRAGMA user_version").get()?.user_version ?? 0,
     );
-    if (version > 1) {
+    if (version > 2) {
       this.db.close();
       throw Error("This game database needs a newer server version.");
     }
@@ -22,7 +34,42 @@ export class GameStore {
  CREATE TABLE IF NOT EXISTS cats(id TEXT PRIMARY KEY,cafe_id TEXT NOT NULL REFERENCES cafes(id),name TEXT NOT NULL,coat INTEGER NOT NULL,happiness INTEGER NOT NULL CHECK(happiness BETWEEN 0 AND 100));
  CREATE TABLE IF NOT EXISTS orders(id TEXT PRIMARY KEY,cafe_id TEXT NOT NULL REFERENCES cafes(id),seat INTEGER NOT NULL,status TEXT NOT NULL,created_at INTEGER NOT NULL,ready_at INTEGER NOT NULL DEFAULT 0,paid_at INTEGER NOT NULL DEFAULT 0,consumed INTEGER NOT NULL DEFAULT 0);
  CREATE TABLE IF NOT EXISTS ledger(id TEXT PRIMARY KEY,owner_id TEXT NOT NULL,request_id TEXT NOT NULL,fingerprint TEXT NOT NULL,kind TEXT NOT NULL,amount INTEGER NOT NULL,before_balance INTEGER NOT NULL,after_balance INTEGER NOT NULL,message TEXT NOT NULL,created_at INTEGER NOT NULL,UNIQUE(owner_id,request_id));
- PRAGMA user_version=1;`);
+ CREATE TABLE IF NOT EXISTS goal_claims(owner_id TEXT NOT NULL,goal_id TEXT NOT NULL,PRIMARY KEY(owner_id,goal_id));`);
+    if (
+      !this.db
+        .prepare("PRAGMA table_info(orders)")
+        .all()
+        .some((r) => r.name === "recipe")
+    )
+      this.db.exec(
+        "ALTER TABLE orders ADD COLUMN recipe TEXT NOT NULL DEFAULT 'black'",
+      );
+    if (
+      !this.db
+        .prepare("PRAGMA table_info(cafes)")
+        .all()
+        .some((r) => r.name === "layout")
+    )
+      this.db.exec(
+        "ALTER TABLE cafes ADD COLUMN layout TEXT NOT NULL DEFAULT '[]'",
+      );
+    if (
+      !this.db
+        .prepare("PRAGMA table_info(cafes)")
+        .all()
+        .some((r) => r.name === "cat_slots")
+    ) {
+      this.db.exec(
+        "ALTER TABLE cafes ADD COLUMN cat_slots INTEGER NOT NULL DEFAULT 1 CHECK(cat_slots BETWEEN 1 AND 10)",
+      );
+      this.db.exec(
+        "UPDATE cafes SET cat_slots=MAX(1,(SELECT COUNT(*) FROM cats WHERE cafe_id=cafes.id))",
+      );
+    }
+    this.db
+      .prepare("UPDATE cafes SET layout=? WHERE layout='[]'")
+      .run(JSON.stringify(DEFAULT_FURNITURE));
+    this.db.exec("PRAGMA user_version=2");
     this.atomic(() => {
       for (const row of this.db.prepare("SELECT id FROM cafes").all())
         this.cancelOrders(String(row.id));
@@ -51,6 +98,9 @@ export class GameStore {
             "INSERT INTO cafes(id,owner_id,coins,beans,food,level) VALUES (?,?,150,12,5,1)",
           )
           .run(id, ownerId);
+        this.db
+          .prepare("UPDATE cafes SET layout=? WHERE id=?")
+          .run(JSON.stringify(DEFAULT_FURNITURE), id);
         this.db
           .prepare("INSERT INTO cats VALUES (?,?,?,?,?)")
           .run(randomUUID(), id, "Oyen", 0, 80);
@@ -89,6 +139,12 @@ export class GameStore {
       revenue: Number(r.revenue),
       visitors: !!r.visitors,
       cats,
+      layout: JSON.parse(String(r.layout)) as Furniture[],
+      catSlots: Number(r.cat_slots),
+      claimed: this.db
+        .prepare("SELECT goal_id FROM goal_claims WHERE owner_id=?")
+        .all(String(r.owner_id))
+        .map((g) => String(g.goal_id)),
     };
   }
   orders(cafeId: string): Order[] {
@@ -106,18 +162,28 @@ export class GameStore {
         readyAt: Number(r.ready_at),
         paidAt: Number(r.paid_at),
         consumed: Number(r.consumed),
+        recipe: recipe(String(r.recipe)).id,
       }));
   }
-  createOrder(cafeId: string, now: number) {
+  createOrder(cafeId: string, now: number, occupiedSeats: number[] = []) {
     const active = this.orders(cafeId);
     if (active.length >= 2) return;
-    const seat = active.some((o) => o.seat === 0) ? 1 : 0;
+    const layout = this.get(cafeId).layout;
+    const seat = [0, 1].find(
+      (seat) =>
+        layout.find((f) => f.id === `table-${seat}`)?.placed !== false &&
+        !occupiedSeats.includes(seat) &&
+        !active.some((o) => o.seat === seat),
+    );
+    if (seat === undefined) return;
     const id = randomUUID();
+    const unlocked = RECIPES.filter((r) => this.get(cafeId).served >= r.unlock);
+    const drink = unlocked[seed(id) % unlocked.length];
     this.db
       .prepare(
-        "INSERT INTO orders(id,cafe_id,seat,status,created_at) VALUES (?,?,?,'WAITING',?)",
+        "INSERT INTO orders(id,cafe_id,seat,status,created_at,recipe) VALUES (?,?,?,'WAITING',?,?)",
       )
-      .run(id, cafeId, seat, now);
+      .run(id, cafeId, seat, now, drink.id);
     return id;
   }
   transaction(
@@ -176,13 +242,18 @@ export class GameStore {
         )
           throw Error("Choose an available cat design.");
         const entry = CATALOG[item];
+        const selectedCoat =
+          coat ?? Math.min(c.cats.length, CAT_DESIGNS.length - 1);
         const cost =
-          entry.price *
-          (item === "decor" ? c.level : item === "adopt" ? c.cats.length : 1);
+          item === "adopt"
+            ? CAT_PRICES[selectedCoat]
+            : entry.price * (item === "decor" ? c.level : 1);
         if (item === "decor" && c.level >= 3)
           throw Error("Your café is already fully decorated.");
-        if (item === "adopt" && c.cats.length >= 3)
-          throw Error("Your cat home is full.");
+        if (item === "adopt" && c.cats.length >= c.catSlots)
+          throw Error(
+            "Your cat home is full. Add another café cat slot first.",
+          );
         if (c.coins < cost) throw Error("Not enough PawCoins.");
         if (
           (item === "beans" && c.beans > 90) ||
@@ -208,8 +279,8 @@ export class GameStore {
             .run(
               randomUUID(),
               c.id,
-              CAT_DESIGNS[coat ?? c.cats.length].defaultName,
-              coat ?? c.cats.length,
+              CAT_DESIGNS[selectedCoat].defaultName,
+              selectedCoat,
               80,
             );
         return item === "adopt"
@@ -220,22 +291,24 @@ export class GameStore {
       },
     );
   }
-  care(ownerId: string, requestId: string, feed: boolean) {
+  care(ownerId: string, requestId: string, feed: boolean, catId?: string) {
     return this.transaction(
       ownerId,
       requestId,
-      feed ? "feed" : "pet",
+      (feed ? "feed" : "pet") + (catId ? ":" + catId : ""),
       "CAT_CARE",
       (c) => {
+        if (catId && !c.cats.some((cat) => cat.id === catId))
+          throw Error("That cat does not live in your café.");
         if (feed && c.food < 1)
           throw Error("Out of cat food. Order supplies first.");
         if (feed)
           this.db.prepare("UPDATE cafes SET food=food-1 WHERE id=?").run(c.id);
         this.db
           .prepare(
-            "UPDATE cats SET happiness=MIN(100,happiness+?) WHERE cafe_id=?",
+            "UPDATE cats SET happiness=MIN(100,happiness+?) WHERE cafe_id=? AND (? IS NULL OR id=?)",
           )
-          .run(feed ? 20 : 5, c.id);
+          .run(feed ? 20 : 5, c.id, catId ?? null, catId ?? null);
         return feed
           ? "Happy cats, full bellies!"
           : "Purrr… your cats love the attention.";
@@ -251,6 +324,135 @@ export class GameStore {
         ? "New visitors are now blocked. Existing visitors may finish their visit."
         : "Your café welcomes visitors.";
     });
+  }
+  claim(ownerId: string, requestId: string, goalId: string) {
+    return this.transaction(
+      ownerId,
+      requestId,
+      "goal:" + goalId,
+      "GOAL_REWARD",
+      (c) => {
+        const goal = GOALS.find((g) => g.id === goalId);
+        if (!goal || goal.progress(c) < goal.target)
+          throw Error("Complete the goal before collecting its reward.");
+        if (c.claimed.includes(goalId))
+          throw Error("This goal reward has already been collected.");
+        this.db
+          .prepare("INSERT INTO goal_claims VALUES (?,?)")
+          .run(ownerId, goalId);
+        this.db
+          .prepare("UPDATE cafes SET coins=coins+? WHERE id=?")
+          .run(goal.reward, c.id);
+        return `${goal.title}: +${goal.reward} PawCoins!`;
+      },
+    );
+  }
+  moveFurniture(
+    ownerId: string,
+    requestId: string,
+    layout: Furniture[],
+    fingerprint: string,
+  ) {
+    return this.transaction(
+      ownerId,
+      requestId,
+      "layout:" + fingerprint,
+      "FURNITURE",
+      (c) => {
+        this.db
+          .prepare("UPDATE cafes SET layout=? WHERE id=?")
+          .run(JSON.stringify(layout), c.id);
+        return "Furniture placed. Walking routes have been updated.";
+      },
+    );
+  }
+  buyCatSlot(ownerId: string, requestId: string) {
+    return this.transaction(ownerId, requestId, "cat-slot", "CAT_SLOT", (c) => {
+      if (c.catSlots >= slotLimit(c.level))
+        throw Error(
+          c.catSlots >= 10
+            ? "Your café has all 10 cat slots."
+            : "Expand the café before adding more cat slots.",
+        );
+      const cost = slotCost(c.catSlots);
+      if (c.coins < cost)
+        throw Error("Not enough PawCoins for another cat slot.");
+      this.db
+        .prepare(
+          "UPDATE cafes SET cat_slots=cat_slots+1,coins=coins-? WHERE id=?",
+        )
+        .run(cost, c.id);
+      return `A new cat slot is ready! ${c.catSlots + 1}/10 café spaces unlocked.`;
+    });
+  }
+  buyFurniture(ownerId: string, requestId: string, itemId: string) {
+    return this.transaction(
+      ownerId,
+      requestId,
+      "furniture-buy:" + itemId,
+      "FURNITURE_PURCHASE",
+      (c) => {
+        const item = FURNITURE_SHOP.find((item) => item.id === itemId);
+        if (!item) throw Error("Choose an item from MEOKEA.");
+        if (c.layout.length >= 40)
+          throw Error(
+            "Your furniture inventory is full. Use the pieces you already own.",
+          );
+        if (c.coins < item.price)
+          throw Error("Not enough PawCoins for this furniture.");
+        const layout = [
+          ...c.layout,
+          {
+            id: `${item.id}-${randomUUID()}`,
+            kind: item.kind,
+            x: 0,
+            z: 0,
+            rotation: 0,
+            level: 1,
+            placed: false,
+          },
+        ];
+        this.db
+          .prepare("UPDATE cafes SET coins=coins-?,layout=? WHERE id=?")
+          .run(item.price, JSON.stringify(layout), c.id);
+        return `${item.name} added to your furniture inventory. Place it in Design mode.`;
+      },
+    );
+  }
+  visitorCare(
+    visitorId: string,
+    requestId: string,
+    cafeId: string,
+    feed: boolean,
+    catId?: string,
+  ) {
+    return this.transaction(
+      visitorId,
+      requestId,
+      `visit-care:${cafeId}:${feed}:${catId ?? "all"}`,
+      "VISITOR_CAT_CARE",
+      (visitor) => {
+        const target = this.get(cafeId);
+        if (catId && !target.cats.some((cat) => cat.id === catId))
+          throw Error("That cat does not live here.");
+        if (feed && visitor.food < 1)
+          throw Error(
+            "You need cat food in your own bag to feed a neighbour's cats.",
+          );
+        if (feed)
+          this.db
+            .prepare("UPDATE cafes SET food=food-1 WHERE id=?")
+            .run(visitor.id);
+        this.db
+          .prepare(
+            "UPDATE cats SET happiness=MIN(100,happiness+?) WHERE cafe_id=? AND (? IS NULL OR id=?)",
+          )
+          .run(feed ? 20 : 5, cafeId, catId ?? null, catId ?? null);
+        return feed
+          ? "A little treat from a neighbour. Your cat food was used."
+          : "Purrr… making a new friend.";
+      },
+    );
   }
   prepare(ownerId: string, requestId: string, orderId: string, now: number) {
     return this.transaction(
@@ -271,8 +473,8 @@ export class GameStore {
           .prepare(
             "UPDATE orders SET status='PREPARING',ready_at=?,consumed=1 WHERE id=?",
           )
-          .run(now + 4000, orderId);
-        return "Coffee is brewing. Ready in 4 seconds.";
+          .run(now + recipe(order.recipe).brewMs, orderId);
+        return `${recipe(order.recipe).name} is brewing. Keep holding.`;
       },
     );
   }
@@ -348,6 +550,8 @@ export class GameStore {
             const earned =
               20 +
               current.level * 3 +
+              recipe(order.recipe).bonus +
+              activeCatBonus(current.cats) +
               (current.cats.some((cat) => cat.happiness >= 60) ? 5 : 0);
             this.db
               .prepare("UPDATE orders SET status='PAID' WHERE id=?")

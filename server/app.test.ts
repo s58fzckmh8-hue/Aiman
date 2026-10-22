@@ -86,6 +86,7 @@ test(
       await until(() =>
         cb.messages.some((m) => m.type === "state" && m.connected === 2),
       );
+      const spawnX=ca.messages.find(m=>m.type==="welcome").self.x;
       for (let seq = 0; seq < 8; seq++) {
         ca.ws.send(JSON.stringify({ type: "input", seq, x: 1, z: 0 }));
         await new Promise((r) => setTimeout(r, 50));
@@ -94,7 +95,7 @@ test(
         cb.messages.some(
           (m) =>
             m.type === "state" &&
-            m.players.some((p: any) => p.id === a.body.id && p.x > -2),
+            m.players.some((p: any) => p.id === a.body.id && p.x > spawnX+1),
         ),
       );
       const oldLot = ca.messages.find((m) => m.type === "welcome").self.lot;

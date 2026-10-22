@@ -1,4 +1,11 @@
+import type { RecipeId, CatPose, Shift, CafeEvent } from "./experience.ts";
+import type { Furniture } from "./furniture.ts";
 export const ROOM = { minX: -6, maxX: 6, minZ: -5, maxZ: 5 };
+export const roomBounds = (level = 1) => ({
+  ...ROOM,
+  minX: ROOM.minX - 2 * (level - 1),
+  minZ: ROOM.minZ - 2 * (level - 1),
+});
 export const ROOM_OBSTACLES = [
   { x: -3.5, z: -3.8, w: 3.8, d: 1.5 },
   { x: -1.6, z: 0.3, w: 1.6, d: 1.5 },
@@ -40,6 +47,7 @@ export type Order = {
   readyAt: number;
   paidAt: number;
   consumed: number;
+  recipe: RecipeId;
 };
 export type Cat = {
   id: string;
@@ -59,6 +67,9 @@ export type Cafe = {
   revenue: number;
   visitors: boolean;
   cats: Cat[];
+  claimed: string[];
+  layout: Furniture[];
+  catSlots: number;
 };
 export type CafeView = {
   id: string;
@@ -69,6 +80,10 @@ export type CafeView = {
   level: number;
   cats: Cat[];
   orders: Order[];
+  catPoses?: CatPose[];
+  shift?: Shift;
+  events?: CafeEvent[];
+  layout?: Furniture[];
 };
 export type Property = {
   cafeId: string;
@@ -100,7 +115,15 @@ export type Action = {
     | "decor"
     | "adopt"
     | "feed"
-    | "pet";
+    | "pet"
+    | "claim"
+    | "sit"
+    | "stand"
+    | "pickCat"
+    | "putCat"
+    | "moveFurniture"
+    | "catSlot"
+    | "buyFurniture";
   target?: string;
 };
 export type ActionResult = {

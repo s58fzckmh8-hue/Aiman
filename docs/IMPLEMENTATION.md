@@ -1,5 +1,17 @@
 # Kafe Miaw implementation ledger
 
+## V0.5 — living café and safe design mode
+
+The 3D world fills the viewport. Business management lives in an in-game phone; physical service remains in the scene. C/E/O/B/R/Shift and on-screen equivalents expose phone, interaction, open/close, design, rotation and sprint. Original articulated human characters replace the earlier robot model. Chairs reserve actual seats, movement/E stands, and owned cats can be approached, carried and put down without changing identity. Server-owned cat routines include wandering, rest, grooming, perches and toys. Visitors may sit and care for cats using their own supplies.
+
+Recipe choice is persisted per order and unlocked from completed service. Reputation derives from served count; five goals have atomic one-time claims. Customers have names, appearance variants, dialogue and patience. Shift counters show actual service, earnings and missed orders. Original procedural sound is gesture-unlocked and optional.
+
+Furniture is persistent owned inventory with half-metre position and quarter-turn rotation. Server validation rejects overlaps, out-of-room placement, blocked entrances/work routes and moving occupied perches. The final food bowl cannot be stored. Queued walkers replan or explicitly cancel when a new object blocks their route. Building upgrades increase actual floor area. One starter slot grows through explicit paid slot purchases, up to ten in the largest room. Adoption prices and capped happiness-dependent bonuses follow eight coat tiers.
+
+Schema v2 adds persisted furniture, owned cat slots, order recipes and goal claims. Migration preserves prior identities, balances, cats and layouts; existing cats receive enough owned slots. Interrupted orders are refunded once. No client currency is trusted. Doorway presentation uses the building's world coordinates and a continuous camera; area authority/interest filtering still applies on the backend.
+
+Twenty-three CC0 GLBs are locally archived with hashes and original notices. Additional car/home/shop art is reserved, not evidence of completed destinations. Functional shops, homes, cars, staff, desserts, outdoor cats and verified rewarded ads remain future stages; see [WORLD-DIRECTION.md](WORLD-DIRECTION.md). Two real clients remain the tested capacity. See [VALIDATION.md](VALIDATION.md) for executed checks.
+
 ## V0.4 — physical café interaction and curated artwork
 
 The coffee sidebar now displays orders and manages the business; it cannot prepare or serve drinks. Click the floor to send an authoritative walking route. Click the machine to approach, then hold it (or hold E nearby) for four continuous seconds. Server-timed work requires fresh heartbeats and proximity. Release, movement, disconnection or a missed heartbeat cancels the work and refunds its bean exactly once. A ready coffee must be picked up at the machine, carried, and delivered near its matching customer. Visitors cannot operate the owner's machine or economy.

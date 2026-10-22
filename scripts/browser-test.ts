@@ -108,12 +108,13 @@ try {
   await pages[1].waitForTimeout(250);
   const after = await pages[1].locator("#world canvas").screenshot();
   assert.ok(!before.equals(after), "remote 3D scene should visibly change");
+  const secondInitial = await playerPosition(pages[0], b);
   await pages[1].keyboard.down("w");
   await pages[1].waitForTimeout(700);
   await pages[1].keyboard.up("w");
   await wait(async () => {
     const p = await playerPosition(pages[0], b);
-    return Math.hypot(p.x, p.z - 3) > 1;
+    return Math.hypot(p.x - secondInitial.x, p.z - secondInitial.z) > 1;
   }, "first browser did not observe second guest");
   await pages[0].screenshot({
     path: "test-results/online-desktop.png",

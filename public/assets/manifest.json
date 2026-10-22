@@ -205,5 +205,49 @@
     "sha256": "bd7956c0a1004fafad3fc3d67bbe112b143a48d0ec262541e1baf4a938d2a0cc",
     "bytes": 28432,
     "transformation": "Lossless glTF/GLB repack with embedded upstream textures. No mesh edits."
+  },
+  {
+    "file": "npc_male_casual.glb",
+    "url": "https://raw.githubusercontent.com/LuanDucate/Ducz.CharacterCreator/fcd215b58eec5c9ed97d0ba5f696d0e7dc085e08/public/models/Male/Casual_2.glb",
+    "license": "CC0-1.0",
+    "sourceSha256": "caaed4ea0846b6c40471830ed13a9067eeb375e942b3986ea9b6175af6cee6d1",
+    "sha256": "30a6232d40dded364edad18a41909ec621422e574f3ff07a7b90bcb0322b24cd",
+    "bytes": 878720,
+    "author": "Quaternius",
+    "upstream": "https://quaternius.com/packs/ultimatemodularcharacters.html",
+    "transformation": "Retain Idle, Idle_Neutral, Walk, Run and Interact clips; losslessly repack referenced accessors/buffer views. Original mesh, materials, skeleton and selected animation samples unchanged."
+  },
+  {
+    "file": "npc_male_hoodie.glb",
+    "url": "https://raw.githubusercontent.com/LuanDucate/Ducz.CharacterCreator/fcd215b58eec5c9ed97d0ba5f696d0e7dc085e08/public/models/Male/Casual_Hoodie.glb",
+    "license": "CC0-1.0",
+    "sourceSha256": "f5b722199f7628b24550989af4230f65d5230727df9c326fd2b3e360effe5249",
+    "sha256": "06dfe81b28d31bba1c23d7cb07ecafc26be7e58118d85fddeb8bd6157012de6c",
+    "bytes": 913436,
+    "author": "Quaternius",
+    "upstream": "https://quaternius.com/packs/ultimatemodularcharacters.html",
+    "transformation": "Retain Idle, Idle_Neutral, Walk, Run and Interact clips; losslessly repack referenced accessors/buffer views. Original mesh, materials, skeleton and selected animation samples unchanged."
+  },
+  {
+    "file": "npc_female_casual.glb",
+    "url": "https://raw.githubusercontent.com/LuanDucate/Ducz.CharacterCreator/fcd215b58eec5c9ed97d0ba5f696d0e7dc085e08/public/models/Female/Casual.glb",
+    "license": "CC0-1.0",
+    "sourceSha256": "bc2d84fba249ebaa0629cb9d133ad37234196e4b8004aa205a6397abed04e05c",
+    "sha256": "7f4361fe27518ce1df3957b5b5157f9b27dc081c62ad6415d04972124c9da3dc",
+    "bytes": 937284,
+    "author": "Quaternius",
+    "upstream": "https://quaternius.com/packs/ultimatemodularwomen.html",
+    "transformation": "Retain Idle, Idle_Neutral, Walk, Run and Interact clips; losslessly repack referenced accessors/buffer views. Original mesh, materials, skeleton and selected animation samples unchanged."
+  },
+  {
+    "file": "npc_female_formal.glb",
+    "url": "https://raw.githubusercontent.com/LuanDucate/Ducz.CharacterCreator/fcd215b58eec5c9ed97d0ba5f696d0e7dc085e08/public/models/Female/Formal.glb",
+    "license": "CC0-1.0",
+    "sourceSha256": "9a676084711f07e48c1c3071c7bfaddfb316e42acfcc47c92bd072f1b3d2be7f",
+    "sha256": "270b09ef20f208a6ec0f7f5d99cb53435d27eced4c87e26656068aabe13bcf29",
+    "bytes": 900456,
+    "author": "Quaternius",
+    "upstream": "https://quaternius.com/packs/ultimatemodularwomen.html",
+    "transformation": "Retain Idle, Idle_Neutral, Walk, Run and Interact clips; losslessly repack referenced accessors/buffer views. Original mesh, materials, skeleton and selected animation samples unchanged."
   }
 ]

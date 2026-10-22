@@ -1,23 +1,24 @@
 # Kafe Miaw 🐾
 
-**Version 0.5 — a living café.** A full-screen 3D game with physical coffee service, sitting and cat cuddles, varied human characters, moving cats, furniture inventory, café expansion and earned progression. Two real guests can share a town and visit each other. The complete small-world life simulation and CrazyGames release are still in development.
+**Version 0.6 — first-person city café.** Explore a colourful town at eye height, with imported civilian models, street life, physical coffee service, sitting and cat cuddles. Furniture inventory, expansion and earned progression remain saved. Two real guests can share a town and visit each other. The complete small-world life simulation and CrazyGames release are still in development.
 
-![A real two-browser café session](docs/images/online-cafe.png)
+![First-person street view](docs/images/fpp-street.png)
 
-[See the physical cat-carrying pose](docs/images/cafe-cuddle.png).
+[First-person café service](docs/images/fpp-service.png).
+
+[First-person cat cuddle](docs/images/fpp-cuddle.png) · [Overview carrying pose](docs/images/cafe-cuddle.png).
 
 ## Start with the VS Code terminal
 
-Use **Node.js 24+** and Git. No Laragon, PHP, MySQL or separate database installation is needed. In Windows PowerShell, stop the old game with **Ctrl+C in its running terminal** before reinstalling dependencies (Windows locks a running `esbuild.exe`). For an existing checkout:
+Use **Node.js 24+** and Git. No Laragon, PHP, MySQL or separate database installation is needed. In Windows PowerShell, stop the old game with **Ctrl+C in its running terminal** before reinstalling dependencies (Windows locks a running `esbuild.exe`). For an existing working v0.5 checkout, dependencies are unchanged; stop the old server, then:
 
 ```powershell
 Set-Location "$env:USERPROFILE\KafeMiawOnline"
 git pull --ff-only
-npm.cmd ci
 npm.cmd run dev -- --port 5174 --server-port 3002
 ```
 
-For a fresh checkout, use a new folder:
+Use `npm.cmd ci` when dependencies are missing or the dependency entries in the lockfile change. For a fresh checkout, use a new folder:
 
 ```powershell
 git clone https://github.com/s58fzckmh8-hue/Aiman.git KafeMiawOnline
@@ -32,23 +33,28 @@ Do not overwrite local changes when updating. A folder extracted from ZIP is not
 
 ## Play the online café
 
+**First-person is the default.** Click the scene to capture the mouse and look around; Escape releases it. Right-drag or touch-drag also looks. Your own head is hidden, while carried coffee and cats appear in your hands. **V** switches to overview; **B** uses overview for furniture design and returns to your selected view when finished.
+
 1. Choose **Play Online**. Press **C** to open the in-game phone and choose **Walk to my café**, or walk to your door and press **E**. The camera follows the doorway crossing in the same scene.
-2. Press **O** inside your café to open or close it. Named customers arrive with individual orders and patience. Click a customer to select their order.
-3. Click the coffee machine to approach. **Hold the machine with mouse/touch, or hold E nearby**, for the full recipe time. Releasing early, walking away or losing hold updates cancels brewing and refunds the bean.
+2. Press **O** inside your café to open or close it. Named customers arrive with individual orders and patience. Aim at a customer and press E (or click in overview) to select their order.
+3. Walk to the coffee machine and aim at it. A distant interaction can also queue a walking approach. **Hold the machine with mouse/touch, or hold E nearby**, for the full recipe time. Releasing early, walking away or losing hold updates cancels brewing and refunds the bean.
 4. Click the machine or press E to pick up the ready cup. Walk to the matching customer, then click them or press E nearby to serve. They drink and pay the owner once. The phone cannot prepare or deliver coffee.
-5. Click a free chair to approach and actually sit. **E** or movement stands up. Click your cat to approach and pick them up; **E** puts them down. Cats walk, rest, groom, play, approach customers and climb their perches. Wait for a perched cat to come down before picking them up.
+5. Aim at a free chair and press E, or click it in overview, to approach and actually sit. **E** or movement stands up. Aim at your cat and press E, or click them in overview, to approach and pick them up; **E** puts them down. Cats walk, rest, groom, play, approach customers and climb their perches. Wait for a perched cat to come down before picking them up.
 6. Close the café and press **B** to arrange furniture. Select a group, click the floor or drag, and press **R** to rotate. Bought furniture enters the phone's inventory first; **Place** selects it for the room, and **Store** puts a piece away. The server checks ownership, collisions, clear entrances and work routes. Keep a food bowl placed.
 7. Use the phone to buy supplies, adopt a selected coat/tier, purchase cat slots, expand the room and claim completed goals. The phone also contains visitors and the separate offline practice entry.
 
 | Control | Action |
 |---|---|
-| WASD / arrows / click floor | Walk; keyboard movement cancels queued routes |
+| WASD / arrows | Walk relative to your look direction; cancels queued routes |
+| Click scene / Escape | Capture / release desktop mouse |
+| V | First-person / overview; click floor walks in overview |
 | Shift | Sprint with empty hands |
 | E / on-screen Interact | Nearby interaction; hold at the machine to brew |
 | O | Toggle your café open/closed |
 | C | Open/close the phone |
 | B / R / Escape | Arrange / rotate / finish arranging |
-| Right-drag / touch-drag / scroll | Orbit / orbit / zoom |
+| Mouse / right-drag / touch-drag | Look around in first-person; orbit in overview |
+| Scroll | Zoom in overview |
 
 The screen also includes movement, interaction, sprint and management controls for touch. Sound unlocks after a user gesture and can be muted.
 
@@ -80,10 +86,11 @@ npm.cmd exec -- playwright install chromium
 npm.cmd run test:browser
 npm.cmd run test:cafe-browser
 npm.cmd run test:life-browser
+npm.cmd run test:fpp-browser
 npm.cmd run test:production
 ```
 
-The scripts create temporary databases and servers, not real player data. Browser tests need Chromium (Playwright installation, `CHROMIUM_PATH`, or detected `/usr/bin/chromium`). Ports 5199, 5196 and 5197 must be free for the respective browser checks. Screenshots are under ignored `test-results/`.
+The scripts create temporary databases and servers, not real player data. Browser tests need Chromium (Playwright installation, `CHROMIUM_PATH`, or detected `/usr/bin/chromium`). Ports 5199, 5196, 5198 and 5197 must be free for the respective browser checks. Screenshots are under ignored `test-results/`.
 
 `npm run build` emits separate online and offline entries in `dist/`; Vite retains a large-bundle advisory. To preview the production frontend, run `npm run server` and `npm run preview` in separate terminals using matching backend port configuration. The static build cannot run the multiplayer simulation by itself.
 
@@ -111,8 +118,8 @@ Public production hosting must provide trusted HTTPS/WSS, same-origin `/api` and
 
 [Implementation ledger](docs/IMPLEMENTATION.md) · [Validation evidence](docs/VALIDATION.md) · [Multiplayer directive](docs/MULTIPLAYER-DIRECTIVE.md) · [Full design](docs/MASTER-SPEC.md)
 
-**Implemented:** two-browser town movement/reconnect and visits; durable server-controlled café economy; physical recipe service; articulated human sitting/carrying poses; cat routines/cuddles and paid slots; visitor care; furniture inventory/placement/rotation; room expansion; reputation, goals, shift reports and procedural sound.
+**Implemented:** default first-person camera, pointer lock with drag fallback, first-person cups/cuddles and seated eye height; a street with eight façade variants, parked cars, benches, lamps, foliage and ambient pedestrian NPCs; two-browser town movement/reconnect and visits; durable server-controlled café economy; physical recipe service; articulated human sitting/carrying poses; cat routines/cuddles and paid slots; visitor care; furniture inventory/placement/rotation; room expansion; reputation, goals, shift reports and procedural sound.
 
 **Still to build:** functional town shops, owned homes/cat lounge, cars/driving, outfits, desserts, staff/wages, full cat needs/genetics, a real rewarded-ad integration, account linking, matchmaking, larger-player load tests and public HTTPS/WSS hosting. See the accepted [small-world direction](docs/WORLD-DIRECTION.md). Ad rewards are not simulated.
 
-The local art collection contains **23 verified CC0 GLBs**; some car/home/shop models are reserved for later gameplay. Current human characters, cats, poses, coffee machine and sound are original project work. See [sources and licenses](docs/ASSETS.md). Imported models alone do not implement a functional shop or driving system.
+The local art collection contains **27 verified CC0 GLBs**; four civilian humans/animations are by Quaternius, distributed as converted GLBs in a pinned Ducz archive. KayKit provides street, car and furniture models. Kafe Miaw supplies cats, hands, runtime seated/carrying poses, coffee machine and sound. Home furnishings remain reserved for later gameplay. Parked cars are solid scenery; driving is still future work. See [sources and licenses](docs/ASSETS.md). Imported models alone do not implement a functional shop or driving system.

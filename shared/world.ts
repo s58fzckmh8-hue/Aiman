@@ -1,23 +1,65 @@
 export const WORLD = {
-  minX: -48,
-  maxX: 48,
-  minZ: -28,
-  maxZ: 28,
+  minX: -96,
+  maxX: 96,
+  minZ: -44,
+  maxZ: 44,
   speed: 5,
   radius: 0.38,
 };
 export const LOTS = Array.from({ length: 20 }, (_, i) => ({
   id: i,
-  x: -40 + (i % 10) * 9,
-  z: i < 10 ? -16 : 16,
+  x: -81 + (i % 10) * 18,
+  z: i < 10 ? -20 : 20,
 }));
 export const BUILDINGS = LOTS.map((l) => ({
   ...l,
-  w: 6.4,
-  d: 7,
+  w: 12.8,
+  d: 14,
   color: [0xe8c39c, 0xb8c7a2, 0xd3a8a0, 0xb6cbd0][l.id % 4],
 }));
-export const OBSTACLES = BUILDINGS.map((b) => ({
+export const STREET_PROPS = [
+  ...[-72, -36, 0, 36, 72].flatMap((x) =>
+    [-1, 1].map((side) => ({
+      kind: "bench" as const,
+      x,
+      z: side * 9,
+      w: 2.1,
+      d: 0.65,
+      rotation: side < 0 ? 0 : Math.PI,
+    })),
+  ),
+  ...[-63, -9, 45].flatMap((x) =>
+    [-1, 1].map((side) => ({
+      kind: "car" as const,
+      x,
+      z: side * 5.5,
+      w: 4.4,
+      d: 2.1,
+      rotation: side < 0 ? Math.PI / 2 : -Math.PI / 2,
+    })),
+  ),
+  ...[-90, -54, -18, 18, 54, 90].flatMap((x) =>
+    [-1, 1].map((side) => ({
+      kind: "tree" as const,
+      x,
+      z: side * 33,
+      w: 0.7,
+      d: 0.7,
+      rotation: 0,
+    })),
+  ),
+  ...[-90, -54, -18, 18, 54, 90].flatMap((x) =>
+    [-1, 1].map((side) => ({
+      kind: "lamp" as const,
+      x,
+      z: side * 7.7,
+      w: 0.25,
+      d: 0.25,
+      rotation: side < 0 ? 0 : Math.PI,
+    })),
+  ),
+];
+export const OBSTACLES = [...BUILDINGS, ...STREET_PROPS].map((b) => ({
   x: b.x,
   z: b.z,
   w: b.w,
@@ -67,5 +109,5 @@ export function move(
 
 export function doorway(lot: number) {
   const b = BUILDINGS[lot];
-  return { x: b.x, z: b.z + (b.z < 0 ? 5.5 : -5.5) };
+  return { x: b.x, z: b.z + (b.z < 0 ? 8.5 : -8.5) };
 }

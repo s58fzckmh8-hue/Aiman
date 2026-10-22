@@ -70,6 +70,7 @@ async function connect(page: Page) {
   await page.goto(origin);
   await page.locator("#world canvas").waitFor();
   await page.locator("#join").click();
+  await page.locator("#view").click();
   await wait(
     async () =>
       (await page.locator("#dot").getAttribute("class")) === "dot connected",

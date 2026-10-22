@@ -852,3 +852,65 @@ dialog h2 {
     transition-duration: 0s !important;
   }
 }
+
+#reticle,
+#aim-target,
+#look-tip {
+  display: none;
+  pointer-events: none;
+  position: absolute;
+  z-index: 2;
+}
+.first-person #reticle {
+  display: block;
+  left: 50%;
+  top: 50%;
+  width: 7px;
+  height: 7px;
+  border: 1.5px solid #fffce9;
+  background: #38554a99;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  box-shadow: 0 0 4px #182f26b3;
+}
+.first-person #aim-target {
+  display: block;
+  left: 50%;
+  top: calc(50% + 18px);
+  transform: translateX(-50%);
+  color: #fff9e9;
+  font-size: 12px;
+  text-align: center;
+  text-shadow:
+    0 1px 4px #14251e,
+    0 1px 12px #14251e;
+  max-width: 260px;
+}
+.first-person #look-tip {
+  display: block;
+  left: 50%;
+  top: 74px;
+  transform: translateX(-50%);
+  padding: 7px 12px;
+  color: #fffbea;
+  background: #294d43bd;
+  border-radius: 8px;
+  font-size: 10px;
+  text-align: center;
+}
+.first-person:not(.management-hidden) #reticle,
+.first-person:not(.management-hidden) #aim-target,
+.first-person:not(.management-hidden) #look-tip {
+  display: none;
+}
+@media (max-width: 760px) {
+  .first-person #look-tip {
+    top: 160px;
+    max-width: 220px;
+    width: max-content;
+    font-size: 9px;
+  }
+  .first-person #aim-target {
+    font-size: 11px;
+  }
+}

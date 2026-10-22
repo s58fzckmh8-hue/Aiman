@@ -58,3 +58,29 @@ export function disposeAssets() {
       .catch(() => {});
   cache.clear();
 }
+/** Normalize animated people in their neutral pose, never in the file's saved preview pose. */
+export async function characterModel(name: string) {
+  let pending = cache.get(name);
+  if (!pending) {
+    pending = new GLTFLoader().loadAsync(
+      `${import.meta.env.BASE_URL}assets/${name}.glb`,
+    );
+    cache.set(name, pending);
+  }
+  const source = await pending,
+    object = clone(source.scene),
+    mixer = new THREE.AnimationMixer(object);
+  const idle =
+    source.animations.find((a) => a.name === "Idle_Neutral") ??
+    source.animations.find((a) => a.name === "Idle");
+  if (idle) mixer.clipAction(idle).play();
+  mixer.update(0);
+  object.updateMatrixWorld(true);
+  const box = new THREE.Box3().setFromObject(object, true),
+    center = box.getCenter(new THREE.Vector3());
+  const holder = new THREE.Group();
+  holder.add(object);
+  object.position.sub(new THREE.Vector3(center.x, box.min.y, center.z));
+  holder.scale.setScalar(1.8 / Math.max(0.01, box.max.y - box.min.y));
+  return { holder, object, mixer, animations: source.animations };
+}

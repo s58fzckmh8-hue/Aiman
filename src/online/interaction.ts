@@ -68,10 +68,10 @@ export class Interaction {
     } else if (s.cafe) {
       this.hint.textContent = s.cafe.orders.some((o) => o.status === "READY")
         ? "Coffee ready! Click the machine or press E nearby to pick it up."
-        : "Click floor to walk. Hold the machine or E nearby to brew. Release to cancel.";
+        : "WASD to walk. Aim and press E to interact. Hold E at the machine to brew.";
     } else
       this.hint.textContent =
-        "Click the ground to walk. Click an occupied café door to enter.";
+        "WASD to walk · mouse / drag to look · E at your café entrance.";
   }
   result(r: ActionResult) {
     if (r.requestId === this.active && !r.pending) this.finish(false);
@@ -196,10 +196,35 @@ export class Interaction {
       } else this.network.action("serve", order.id);
     }
   }
-  key() {
+  key(aim?: WorldHit, firstPerson = false) {
     const p = this.self,
       s = this.snapshot;
     if (!p || !s) return;
+    if (p.sitting) {
+      this.network.action("stand");
+      return;
+    }
+    if (p.carriedCatId) {
+      this.network.action("putCat");
+      return;
+    }
+    if (aim && !["floor", "furniture"].includes(aim.kind)) {
+      this.handle(aim, "press");
+      return;
+    }
+    if (firstPerson) {
+      if (
+        p.area !== "town" &&
+        Math.hypot(p.x, p.z - 4) < 0.9 &&
+        !p.carriedOrderId
+      )
+        this.network.action("exit");
+      else
+        this.note(
+          "Aim at an object and press E. Hold E at the coffee machine.",
+        );
+      return;
+    }
     if (p.area === "town") {
       const property = s.properties?.find((prop) => {
         const door = doorway(prop.lot);

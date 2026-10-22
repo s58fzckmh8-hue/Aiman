@@ -26,22 +26,32 @@ for (const item of manifest) {
     data.subarray(20, 20 + data.readUInt32LE(12)).toString(),
   );
   assert.ok(
-    doc.images?.every(
+    (doc.images ?? []).every(
       (i: { uri?: string; bufferView?: number }) =>
         !i.uri && i.bufferView !== undefined,
     ),
   );
   assert.ok(doc.buffers.every((b: { uri?: string }) => !b.uri));
+  for (const view of doc.bufferViews ?? [])
+    assert.ok(
+      (view.byteOffset ?? 0) + view.byteLength <=
+        doc.buffers[view.buffer].byteLength,
+    );
+  if (item.file.startsWith("npc_")) {
+    assert.ok(doc.skins?.length > 0);
+    for (const name of ["Idle_Neutral", "Walk", "Interact"])
+      assert.ok(doc.animations.some((a: { name: string }) => a.name === name));
+  }
   assert.equal(item.license, "CC0-1.0");
   assert.match(item.url, /raw.githubusercontent.com\/.*\/[0-9a-f]{40}\//);
   bytes += data.length;
 }
-assert.equal(manifest.length, 23);
+assert.equal(manifest.length, 27);
 assert.deepEqual(
   (await readdir(root)).filter((file) => file.endsWith(".glb")).sort(),
   manifest.map((item) => item.file).sort(),
 );
-assert.ok(bytes < 2000000);
+assert.ok(bytes < 6000000);
 console.log(
   `PASS: ${manifest.length} pinned CC0 models, verified hashes and embedded resources; ${bytes} bytes total.`,
 );

@@ -1,6 +1,13 @@
+import { lookDelta, viewDirection } from "../../shared/view.ts";
 import { ROOM_SCALE, roomOrigin, roomToTown } from "../../shared/portals.ts";
 import * as THREE from "three";
-import { human, animateHuman, disposeHumans, type Human } from "./character.ts";
+import {
+  human,
+  animateHuman,
+  disposeHuman,
+  disposeHumans,
+  type Human,
+} from "./character.ts";
 import {
   recipe,
   customerProfile,
@@ -19,7 +26,7 @@ import { catModel, disposeCatModel, disposeCatResources } from "./cat-model.ts";
 import type { WorldHit } from "./interaction.ts";
 import { roomBounds, ENTRY, type CafeView } from "../../shared/cafe.ts";
 import { route, type Point } from "../../shared/navigation.ts";
-import { BUILDINGS } from "../../shared/world.ts";
+import { BUILDINGS, STREET_PROPS, WORLD } from "../../shared/world.ts";
 import type { PlayerState, PublicState } from "../../shared/protocol.ts";
 type Sample = { time: number; state: PlayerState };
 type Avatar = {
@@ -39,7 +46,7 @@ export class World {
   private environment = new THREE.Group();
   private neighbourhood = new THREE.Group();
   private anchorLot = 0;
-  private renderedZoom = 24;
+  private renderedZoom = 36;
   private serverTime = Date.now();
   private snapshotAt = performance.now();
   private previewMaterial = new THREE.MeshBasicMaterial({
@@ -76,7 +83,35 @@ export class World {
       text: string;
     }
   >();
-  private camera = new THREE.PerspectiveCamera(45, 1, 0.1, 240);
+  private camera = new THREE.PerspectiveCamera(70, 1, 0.04, 300);
+  private firstPerson = true;
+  private lookYaw = 0;
+  private lookPitch = 0;
+  private lookPaused = false;
+  private cameraReady = false;
+  private lastAim = "";
+  private py = 0;
+  private indoorShell?: THREE.Group;
+  private streetPeople: { human: Human; direction: number; speed: number }[] =
+    [];
+  private hands = new THREE.Group();
+  private handCup?: THREE.Group;
+  private handCat?: THREE.Group;
+  private handCatId?: string;
+  private handArms: THREE.Mesh[] = [];
+  private glass = new THREE.MeshStandardMaterial({
+    color: 0xb4d9dd,
+    transparent: true,
+    opacity: 0.18,
+    roughness: 0.2,
+    depthWrite: false,
+  });
+  get isFirstPerson() {
+    return this.firstPerson && !this.buildEnabled;
+  }
+  get pointerLocked() {
+    return document.pointerLockElement === this.renderer.domElement;
+  }
   private target = new THREE.Vector3(0, 0, 1);
   private avatars = new Map<string, Avatar>();
   private materials = new Map<number, THREE.MeshStandardMaterial>();
@@ -102,7 +137,7 @@ export class World {
   private lastDraw = performance.now();
   private observer: ResizeObserver;
   private angle = Math.PI / 5;
-  private zoom = 24;
+  private zoom = 36;
   private dragging = false;
   private px = 0;
   private disposed = false;
@@ -114,6 +149,8 @@ export class World {
   constructor(
     private host: HTMLElement,
     private interact?: (hit: WorldHit, phase: "press" | "release") => void,
+    private viewChanged?: (firstPerson: boolean) => void,
+    private aimChanged?: (label: string, locked: boolean) => void,
   ) {
     this.renderer = new THREE.WebGLRenderer({
       antialias: true,
@@ -122,7 +159,7 @@ export class World {
     this.renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-    this.renderer.setClearColor(0xeceee2);
+    this.renderer.setClearColor(0xb9d9e7);
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.15;
@@ -133,7 +170,7 @@ export class World {
     this.renderer.domElement.setAttribute("role", "img");
     this.renderer.domElement.tabIndex = 0;
     this.host.append(this.renderer.domElement);
-    this.scene.fog = new THREE.Fog(0xeceee2, 45, 115);
+    this.scene.fog = new THREE.Fog(0xb9d9e7, 80, 210);
     this.scene.add(new THREE.HemisphereLight(0xfff6e4, 0x8caa91, 1.8));
     const sun = new THREE.DirectionalLight(0xffe6c5, 1.8);
     sun.position.set(-15, 35, 18);
@@ -148,6 +185,29 @@ export class World {
     this.scene.add(sun.target);
     this.scene.add(this.environment);
     this.scene.add(this.neighbourhood);
+    this.scene.add(this.camera);
+    this.camera.layers.enable(1);
+    this.camera.add(this.hands);
+    for (const x of [-0.23, 0.23]) {
+      const arm = this.mesh(
+        this.ball,
+        0xd8aa87,
+        x,
+        -0.4,
+        -0.44,
+        0.075,
+        0.19,
+        0.085,
+        this.hands,
+      );
+      arm.rotation.x = -0.65;
+      this.handArms.push(arm);
+    }
+    this.handCup = this.cup();
+    this.handCup.position.set(0.23, -0.32, -0.62);
+    this.hands.add(this.handCup);
+    this.handCup.visible = false;
+    this.hands.visible = false;
     this.buildTown();
     this.observer = new ResizeObserver(() => this.resize());
     this.observer.observe(host);
@@ -159,6 +219,10 @@ export class World {
     c.addEventListener("pointerup", this.pointerUp);
     c.addEventListener("pointercancel", this.pointerUp);
     c.addEventListener("wheel", this.wheel, { passive: false });
+    document.addEventListener("mousemove", this.mouseLook);
+    document.addEventListener("pointerlockchange", this.lockChanged);
+    document.addEventListener("pointerlockerror", this.lockChanged);
+    this.syncView();
     this.draw();
   }
   private material(color: number) {
@@ -306,9 +370,18 @@ export class World {
     handle.rotation.y = Math.PI / 2;
     return g;
   }
+  private placeCupInHand(person: Human, cup: THREE.Group, parent: THREE.Group) {
+    const wrist = person.external?.object.getObjectByName("WristR");
+    if (wrist) {
+      const point = parent.worldToLocal(
+        wrist.getWorldPosition(new THREE.Vector3()),
+      );
+      cup.position.copy(point).add(new THREE.Vector3(-0.1, -0.04, 0.02));
+    }
+  }
   private coffeeMachine() {
     const g = new THREE.Group();
-    g.position.set(-3.5, 1.4, -3.8);
+    g.position.set(-3.5, 1.1, -3.8);
     g.userData.interaction = { kind: "machine" };
     this.environment.add(g);
     this.cube(0x436a5a, 0, 0.38, 0, 1.1, 0.76, 0.68, g);
@@ -341,57 +414,118 @@ export class World {
     return g;
   }
   private buildTown(skip = -1) {
-    this.cube(0xb8c6a1, 0, -0.25, 0, 100, 0.5, 60);
-    this.cube(0xe7ddc5, 0, 0.01, 0, 96, 0.08, 18);
-    this.cube(0xcfc7ae, 0, 0.06, 0, 96, 0.06, 6);
-    for (let x = -45; x < 48; x += 6)
-      this.cube(0xeee7d3, x, 0.1, 0, 2, 0.02, 0.13);
-    for (const z of [-9, 9]) this.cube(0xf1e8d2, 0, 0.1, z, 96, 0.16, 2.1);
-    for (const x of [-5, 5])
+    const width = WORLD.maxX - WORLD.minX;
+    this.cube(0x8da87c, 0, -0.35, 0, width + 35, 0.5, 140);
+    this.cube(0xddd4c4, 0, 0.01, 0, width, 0.08, 17);
+    this.cube(0x646f73, 0, 0.055, 0, width, 0.06, 7);
+    for (let x = -90; x < 94; x += 7)
+      this.cube(0xeeddb6, x, 0.092, 0, 2.8, 0.025, 0.12);
+    for (const z of [-10, 10]) {
+      this.cube(0xeee3d0, 0, 0.1, z, width, 0.18, 3.2);
+      this.cube(0xc7c2b2, 0, 0.18, z - Math.sign(z) * 1.65, width, 0.24, 0.2);
+      for (let x = -94; x < 96; x += 2)
+        this.cube(0xd9cdb9, x, 0.202, z, 0.025, 0.012, 3.1);
+    }
+    for (const x of [-45, 45])
       for (let z = -3; z <= 3; z += 1)
-        this.cube(0xf5efdc, x, 0.12, z, 0.65, 0.04, 0.5);
+        this.cube(0xf5efdc, x, 0.095, z, 2, 0.025, 0.55);
     for (const b of BUILDINGS) {
-      if (
-        b.id === skip ||
-        (skip >= 0 &&
-          Math.hypot(b.x - BUILDINGS[skip].x, b.z - BUILDINGS[skip].z) < 12)
-      )
-        continue;
+      if (b.id === skip) continue;
       const side = b.z < 0 ? 1 : -1;
-      this.cube(0xd2c3a5, b.x, 0.1, b.z, 8, 0.2, 10);
+      this.cube(0xc7bea9, b.x, 0.06, b.z, 14, 0.12, 15);
+      const names = [
+        "building_A_withoutBase",
+        "building_B_withoutBase",
+        "building_C_withoutBase",
+        "building_D_withoutBase",
+        "building_E_withoutBase",
+        "building_F_withoutBase",
+        "building_G_withoutBase",
+        "building_H_withoutBase",
+      ];
       const building = this.asset(
-        b.id % 2 ? "building_B_withoutBase" : "building_A_withoutBase",
+        names[b.id % names.length],
         b.x,
-        0.2,
+        0,
         b.z,
         b.w,
-        3.2,
+        6.4,
         b.d,
         b.z < 0 ? 0 : Math.PI,
       );
       building.userData.interaction = { kind: "door", target: String(b.id) };
-      this.cube(0xe7d2ae, b.x, 0.16, b.z + side * 5, 2, 0.1, 3);
-      const sign = this.sign(
+      this.cube(0xe8d9ba, b.x, 0.07, b.z + side * 8, 2, 0.14, 3);
+      const sign = this.wallSign(
         `LOT ${String(b.id + 1).padStart(2, "0")}`,
         "#57705c",
-        3,
+        2.5,
       );
-      sign.position.set(b.x, 3.75, b.z);
+      sign.position.set(b.x, 2.8, b.z + side * 7.15);
+      sign.rotation.y = side === 1 ? 0 : Math.PI;
       sign.userData.lot = b.id;
       sign.visible = false;
       this.environment.add(sign);
       this.labels.push(sign);
     }
-    // Low ground-cover decoration has no solid collision; all buildings use shared authoritative footprints.
-    for (let i = 0; i < 20; i++) {
-      const x = -44 + i * 4.5;
-      this.mesh(this.ball, 0x9daf88, x, 0.12, i % 2 ? 26 : -26, 1.6, 0.25, 1.1);
+    for (const p of STREET_PROPS) {
+      if (p.kind === "bench")
+        this.asset("bench", p.x, 0.2, p.z, p.w, 1.1, p.d, p.rotation);
+      else if (p.kind === "car")
+        this.asset("car_hatchback", p.x, 0.1, p.z, p.d, 1.55, p.w, p.rotation);
+      else if (p.kind === "lamp")
+        this.asset("streetlight", p.x, 0.2, p.z, 0.45, 4.4, 0.7, p.rotation);
+      else {
+        this.cube(0x81634a, p.x, 1.9, p.z, 0.55, 3.8, 0.55);
+        this.asset("bush", p.x, 2.7, p.z, 4.8, 4.6, 4.8);
+      }
+    }
+    for (const z of [-34, 34])
+      this.cube(0xd7ccb4, 0, 0.045, z, width, 0.09, 2.6);
+    // Distant hills and clouds are original scenery outside the walkable bounds.
+    for (let i = 0; i < 15; i++) {
+      const x = -145 + i * 22,
+        z = i % 2 ? -68 : 68;
+      this.mesh(
+        this.ball,
+        i % 2 ? 0x829980 : 0x6f927b,
+        x,
+        0,
+        z,
+        25,
+        8 + (i % 4) * 3,
+        18,
+      );
+    }
+    for (let i = 0; i < 10; i++)
+      for (let n = 0; n < 3; n++)
+        this.mesh(
+          this.ball,
+          0xf1f1e8,
+          -110 + i * 24 + n * 3,
+          20 + (i % 3) * 3,
+          i % 2 ? -45 : 45,
+          5,
+          1.4 + n * 0.3,
+          2.5,
+        );
+    for (let i = 0; i < 10; i++) {
+      const person = human(`street-neighbour-${i}`, false, undefined, (name) =>
+        this.assetLoaded(name),
+      );
+      person.root.position.set(-86 + i * 18, 0.2, i % 2 ? 10.8 : -10.8);
+      person.root.rotation.y = i % 2 ? Math.PI / 2 : -Math.PI / 2;
+      this.environment.add(person.root);
+      this.streetPeople.push({
+        human: person,
+        direction: i % 2 ? 1 : -1,
+        speed: 0.7 + (i % 3) * 0.12,
+      });
     }
   }
   private avatar(p: PlayerState) {
     const group = new THREE.Group();
     this.scene.add(group);
-    const person = human(p.id, true, p.color);
+    const person = human(p.id, true, p.color, (name) => this.assetLoaded(name));
     group.add(person.root);
     const label = this.sign(
       p.id === this.selfId ? "YOU" : p.name,
@@ -430,6 +564,7 @@ export class World {
   private clearEnvironment() {
     for (const g of this.cats.values()) disposeCatModel(g);
     for (const customer of this.customers.values()) {
+      disposeHuman(customer.human);
       customer.bubble.material.map?.dispose();
       customer.bubble.material.dispose();
     }
@@ -440,6 +575,9 @@ export class World {
         : [this.grid.material])
         material.dispose();
     }
+    for (const p of this.streetPeople) disposeHuman(p.human);
+    this.streetPeople = [];
+    this.indoorShell = undefined;
     this.environment.clear();
     this.neighbourhood.clear();
     this.environment.position.set(0, 0, 0);
@@ -469,11 +607,51 @@ export class World {
     for (let z = bounds.minZ + 0.2; z < 5; z += 0.8)
       this.cube(0xd9ba92, cx, 0.012, z, width, 0.025, 0.025);
     this.cube(0xf3e8cf, cx, 1.7, bounds.minZ, width, 3.4, 0.18);
+    const shell = new THREE.Group();
+    this.environment.add(shell);
+    this.indoorShell = shell;
+    this.cube(0xf3e8cf, bounds.maxX, 1.7, cz, 0.18, 3.4, depth, shell);
+    this.cube(0xf4ecd9, cx, 3.46, cz, width, 0.12, depth, shell);
+    this.cube(0xe8ddc7, cx, 3.07, 5, width, 0.66, 0.18, shell);
+    for (const [left, right] of [
+      [bounds.minX, -0.95],
+      [0.95, bounds.maxX],
+    ]) {
+      const x = (left + right) / 2,
+        w = right - left;
+      this.cube(0xd9c9ad, x, 0.4, 5, w, 0.8, 0.18, shell);
+      const pane = new THREE.Mesh(this.box, this.glass);
+      pane.position.set(x, 1.77, 5);
+      pane.scale.set(w, 1.94, 0.08);
+      shell.add(pane);
+      for (const edge of [left + 0.05, right - 0.05])
+        this.cube(0x53756a, edge, 1.7, 4.96, 0.09, 3.4, 0.18, shell);
+      this.cube(0x53756a, x, 0.85, 4.96, w, 0.08, 0.18, shell);
+      this.cube(0x53756a, x, 2.7, 4.96, w, 0.08, 0.18, shell);
+    }
+    // A single open doorway. Its leaf is turned against the right jamb.
+    const door = this.cube(0x53756a, 1.02, 1.32, 4.18, 0.11, 2.64, 1.65, shell);
+    door.userData.interaction = { kind: "exit" };
+    for (const x of [-2, 2]) {
+      this.cube(0x756c56, x, 3.32, -0.8, 0.06, 0.3, 0.06, shell);
+      this.mesh(
+        this.cylinder,
+        0xf1dfaa,
+        x,
+        3.12,
+        -0.8,
+        0.35,
+        0.12,
+        0.35,
+        shell,
+      );
+    }
+    shell.visible = this.isFirstPerson;
     this.cube(0xdce2cb, bounds.minX, 1.7, cz, 0.18, 3.4, depth);
     this.cube(0x8caa9b, 1.5, 2, bounds.minZ + 0.14, 3.8, 1.7, 0.1);
     this.cube(0xfaf1d7, 1.5, 2, bounds.minZ + 0.24, 0.09, 1.7, 0.07);
     this.cube(0xfaf1d7, 1.5, 2, bounds.minZ + 0.24, 3.8, 0.08, 0.07);
-    this.asset("kitchencounter_straight_A", -3.5, 0, -3.8, 3.8, 1.32, 1.5);
+    this.asset("kitchencounter_straight_A", -3.5, 0, -3.8, 3.8, 1.05, 1.5);
     this.coffeeMachine();
     const label = this.wallSign(cafe.ownerName + "’s café", "#3a5d48", 2.2);
     label.position.set(1.5, 3.1, bounds.minZ + 0.3);
@@ -562,6 +740,8 @@ export class World {
         0.8,
       );
       label.position.set(0, 1.1, 0);
+      label.userData.table = true;
+      if (this.isFirstPerson) label.scale.set(0.35, 0.0875, 1);
       group.add(label);
       this.labels.push(label);
     } else if (f.kind === "bed") {
@@ -584,12 +764,12 @@ export class World {
       this.mesh(this.ball, 0x9da97b, 0.19, 0.13, 0.13, 0.12, 0.12, 0.12, group);
       this.cube(0xb8a182, 0.17, 0.2, -0.18, 0.19, 0.4, 0.19, group);
     } else if (f.kind === "sofa") {
-      this.cube(0x8c9e86, 0, 0.3, 0, 2, 0.6, 1, group);
-      this.cube(0xa9b79b, 0, 0.81, -0.4, 2, 0.68, 0.2, group);
-      for (const x of [-0.9, 0.9])
-        this.cube(0x8c9e86, x, 0.62, 0, 0.2, 0.5, 0.95, group);
+      asset("couch_pillows", 0, 0, 0, 2, 0.95, 1);
       for (const [i, x] of [-0.45, 0.45].entries()) {
-        const seat = this.cube(0xb6c4a9, x, 0.59, 0.03, 0.8, 0.2, 0.78, group);
+        const seat = new THREE.Mesh(this.box, this.hitMaterial);
+        seat.position.set(x, 0.65, 0.03);
+        seat.scale.set(0.8, 0.3, 0.78);
+        group.add(seat);
         seat.userData.interaction = { kind: "chair", target: `${f.id}:${i}` };
       }
     }
@@ -635,6 +815,7 @@ export class World {
   }
   private catModel(coat: number) {
     const g = catModel(coat);
+    g.scale.setScalar(0.5);
     const hit = new THREE.Mesh(this.box, this.hitMaterial);
     hit.scale.set(0.75, 1.25, 1.1);
     hit.position.set(0, 0.62, 0.05);
@@ -685,7 +866,13 @@ export class World {
         const group = new THREE.Group();
         this.environment.add(group);
         group.userData.interaction = { kind: "customer", target: order.id };
-        const person = human(order.id);
+        const bodyHit = new THREE.Mesh(this.box, this.hitMaterial);
+        bodyHit.position.y = 0.9;
+        bodyHit.scale.set(0.7, 1.8, 0.7);
+        group.add(bodyHit);
+        const person = human(order.id, false, undefined, (name) =>
+          this.assetLoaded(name),
+        );
         group.add(person.root);
         const bubble = this.sign(customerProfile(order.id).name, "#68765f", 2);
         bubble.position.y = 2.18;
@@ -762,6 +949,10 @@ export class World {
   }
   snapshot(s: PublicState) {
     this.serverTime = s.time;
+    if (!this.cameraReady && s.players.some((p) => p.id === this.selfId)) {
+      const player = s.players.find((p) => p.id === this.selfId)!;
+      this.lookYaw = player.lot < 10 ? 0 : Math.PI;
+    }
     this.snapshotAt = performance.now();
     const self = s.players.find((p) => p.id === this.selfId),
       area = self?.area ?? "town";
@@ -787,10 +978,16 @@ export class World {
         this.buildRoom(s.cafe);
       }
       if (changed) {
+        if (self?.doorTransition) {
+          this.lookYaw =
+            roomOrigin(self.doorTransition.lot).rotation +
+            (self.doorTransition.kind === "exit" ? Math.PI : 0);
+          this.lookPitch = 0;
+        }
         for (const a of this.avatars.values()) this.disposeAvatar(a);
         this.avatars.clear();
 
-        this.zoom = area === "town" ? 24 : 13 + 2 * ((s.cafe?.level ?? 1) - 1);
+        this.zoom = area === "town" ? 36 : 13 + 2 * ((s.cafe?.level ?? 1) - 1);
       }
     }
     if (s.cafe && layoutKey !== this.layoutKey) {
@@ -810,6 +1007,21 @@ export class World {
           (p) => p.lot === label.userData.lot,
         );
         label.visible = !!property;
+        if (
+          property &&
+          label instanceof THREE.Mesh &&
+          label.userData.title !== property.name
+        ) {
+          const title = this.wallSign(
+            `${property.name}'s café`,
+            "#375948",
+            2.5,
+          );
+          label.material.map?.dispose();
+          label.material.dispose();
+          label.material = title.material;
+          label.userData.title = property.name;
+        }
       }
     }
     const now = performance.now();
@@ -827,6 +1039,7 @@ export class World {
       }
   }
   private disposeAvatar(a: Avatar) {
+    if (a.human) disposeHuman(a.human);
     if (a.heldCat) disposeCatModel(a.heldCat);
     a.group.removeFromParent();
     a.label.material.map?.dispose();
@@ -839,21 +1052,32 @@ export class World {
     this.renderer.setSize(width, height, false);
   }
   private prevent = (e: Event) => e.preventDefault();
-  private hit(e: PointerEvent): WorldHit | undefined {
+  private hit(e?: PointerEvent): WorldHit | undefined {
     const rect = this.renderer.domElement.getBoundingClientRect();
     this.raycaster.setFromCamera(
-      new THREE.Vector2(
-        ((e.clientX - rect.left) / rect.width) * 2 - 1,
-        (-(e.clientY - rect.top) / rect.height) * 2 + 1,
-      ),
+      e
+        ? new THREE.Vector2(
+            ((e.clientX - rect.left) / rect.width) * 2 - 1,
+            (-(e.clientY - rect.top) / rect.height) * 2 + 1,
+          )
+        : new THREE.Vector2(),
       this.camera,
     );
     const hit = this.raycaster
       .intersectObject(this.environment, true)
-      .find((hit) => !(hit.object instanceof THREE.Sprite));
-    if (!hit) return;
+      .find((hit) => {
+        if (hit.object instanceof THREE.Sprite) return false;
+        for (
+          let object: THREE.Object3D | null = hit.object;
+          object;
+          object = object.parent
+        )
+          if (!object.visible) return false;
+        return true;
+      });
+    if (!hit || (!e && hit.distance > 4)) return;
     let object: THREE.Object3D | null = hit.object;
-    if (this.buildEnabled) {
+    if (this.buildEnabled && e) {
       for (
         let parent: THREE.Object3D | null = object;
         parent && parent !== this.environment;
@@ -871,11 +1095,70 @@ export class World {
     const local = this.environment.worldToLocal(hit.point.clone());
     return { kind: "floor", point: { x: local.x, z: local.z } };
   }
+  aimedHit() {
+    return this.isFirstPerson ? this.hit() : undefined;
+  }
+  pauseLook(paused: boolean) {
+    this.lookPaused = paused;
+    if (paused && this.pointerLocked) document.exitPointerLock();
+  }
+  toggleView() {
+    if (this.buildEnabled) return;
+    this.firstPerson = !this.firstPerson;
+    this.interact?.({ kind: "floor" }, "release");
+    if (this.pointerLocked) document.exitPointerLock();
+    this.syncView();
+  }
+  private syncView() {
+    this.renderer.domElement.dataset.view = this.isFirstPerson
+      ? "first-person"
+      : "overview";
+    this.camera.fov = this.isFirstPerson ? 70 : 45;
+    this.camera.updateProjectionMatrix();
+    if (this.indoorShell) this.indoorShell.visible = this.isFirstPerson;
+    for (const label of this.labels)
+      if (label.userData.table)
+        label.scale.set(
+          this.isFirstPerson ? 0.35 : 0.8,
+          this.isFirstPerson ? 0.0875 : 0.2,
+          1,
+        );
+    this.viewChanged?.(this.isFirstPerson);
+  }
+  private lockChanged = () => {
+    if (!this.pointerLocked) this.interact?.({ kind: "floor" }, "release");
+    this.aimChanged?.(this.lastAim, this.pointerLocked);
+  };
+  private mouseLook = (e: MouseEvent) => {
+    if (this.isFirstPerson && this.pointerLocked && !this.lookPaused)
+      this.turn(e.movementX, e.movementY, 0.0025);
+  };
+  private turn(dx: number, dy: number, sensitivity = 0.004) {
+    const look = lookDelta(this.lookYaw, this.lookPitch, dx, dy, sensitivity);
+    this.lookYaw = look.yaw;
+    this.lookPitch = look.pitch;
+  }
   private pointerDown = (e: PointerEvent) => {
     this.renderer.domElement.focus({ preventScroll: true });
     this.pointerStart = { x: e.clientX, y: e.clientY };
     this.px = e.clientX;
+    this.py = e.clientY;
     this.isTouch = e.pointerType === "touch";
+    if (
+      this.isFirstPerson &&
+      !this.lookPaused &&
+      !this.isTouch &&
+      e.button === 0 &&
+      !this.pointerLocked
+    ) {
+      try {
+        const lock = this.renderer.domElement.requestPointerLock();
+        if (lock) void lock.catch(() => this.lockChanged());
+      } catch {
+        this.lockChanged();
+      }
+      return;
+    }
     this.touchMoved = false;
     this.renderer.domElement.setPointerCapture(e.pointerId);
     if (e.button === 2) {
@@ -900,7 +1183,10 @@ export class World {
       }
       return;
     }
-    this.pointerHit = this.hit(e);
+    this.pointerHit =
+      this.isFirstPerson && !this.isTouch ? this.hit() : this.hit(e);
+    if (this.isFirstPerson && this.pointerHit?.kind === "floor")
+      this.pointerHit = undefined;
     if (import.meta.env.DEV)
       this.renderer.domElement.dataset.lastHit = JSON.stringify(
         this.pointerHit ?? null,
@@ -932,8 +1218,11 @@ export class World {
         this.interact?.(this.pointerHit, "release");
     }
     if (this.dragging) {
-      this.angle -= (e.clientX - this.px) * 0.008;
+      if (this.isFirstPerson && !this.lookPaused)
+        this.turn(e.clientX - this.px, e.clientY - this.py);
+      else this.angle -= (e.clientX - this.px) * 0.008;
       this.px = e.clientX;
+      this.py = e.clientY;
     } else {
       const hit = this.hit(e);
       this.hoverTarget = hit?.target;
@@ -969,14 +1258,20 @@ export class World {
   };
   private wheel = (e: WheelEvent) => {
     e.preventDefault();
-    this.zoom = THREE.MathUtils.clamp(this.zoom + e.deltaY * 0.018, 12, 45);
+    if (!this.isFirstPerson)
+      this.zoom = THREE.MathUtils.clamp(this.zoom + e.deltaY * 0.018, 12, 65);
   };
   resetCamera() {
+    this.lookPitch = 0;
+    this.lookYaw =
+      this.area === "town" ? 0 : roomOrigin(this.anchorLot).rotation;
     this.angle = Math.PI / 5;
-    this.zoom = this.area === "town" ? 24 : 13;
+    this.zoom = this.area === "town" ? 36 : 13;
   }
   setBuild(enabled: boolean) {
     this.buildEnabled = enabled;
+    if (this.pointerLocked) document.exitPointerLock();
+    this.syncView();
     this.buildSelection = undefined;
     this.buildDragging = false;
     if (this.grid) this.grid.visible = enabled;
@@ -1048,6 +1343,12 @@ export class World {
     );
   }
   direction(x: number, z: number) {
+    if (this.isFirstPerson) {
+      const d = viewDirection(this.lookYaw, x, z);
+      const rotation =
+        this.area === "town" ? 0 : roomOrigin(this.anchorLot).rotation;
+      return viewDirection(-rotation, d.x, d.z);
+    }
     return {
       x: Math.cos(this.angle) * x + Math.sin(this.angle) * z,
       z: -Math.sin(this.angle) * x + Math.cos(this.angle) * z,
@@ -1060,13 +1361,28 @@ export class World {
       viewTime = now - 110;
     const deltaDraw = Math.min(0.1, (now - this.lastDraw) / 1000);
     this.lastDraw = now;
+    for (const p of this.streetPeople) {
+      p.human.root.position.x += p.direction * p.speed * deltaDraw;
+      if (Math.abs(p.human.root.position.x) > 89) p.direction *= -1;
+      p.human.root.rotation.y = p.direction > 0 ? Math.PI / 2 : -Math.PI / 2;
+      animateHuman(p.human, now, true);
+    }
     for (const [id, c] of this.customers) {
       const target = c.path[0];
       c.bubble.visible =
-        this.hoverTarget === id ||
-        this.selectedCustomer === id ||
-        c.group.userData.status === "DRINKING";
-      animateHuman(c.human, now, !!target, !target && !c.leaving, false, false);
+        !this.isFirstPerson &&
+        (this.hoverTarget === id ||
+          this.selectedCustomer === id ||
+          c.group.userData.status === "DRINKING");
+      animateHuman(
+        c.human,
+        now,
+        !!target,
+        !target && !c.leaving,
+        c.group.userData.status === "DRINKING",
+        false,
+      );
+      if (c.cup.visible) this.placeCupInHand(c.human, c.cup, c.group);
       if (!target && !c.leaving) {
         const seat = chair(
           this.cafe?.layout ?? DEFAULT_FURNITURE,
@@ -1089,6 +1405,7 @@ export class World {
           c.group.rotation.y = Math.atan2(dx, dz);
         }
       } else if (c.leaving) {
+        disposeHuman(c.human);
         c.group.removeFromParent();
         c.bubble.material.map?.dispose();
         c.bubble.material.dispose();
@@ -1109,7 +1426,7 @@ export class World {
           Math.cos(pose.rotation - g.rotation.y),
         );
         g.rotation.y += diff * Math.min(1, deltaDraw * 10);
-        g.scale.y = pose.activity === "sleeping" ? 0.64 : 1;
+        g.scale.y = pose.activity === "sleeping" ? 0.32 : 0.5;
         g.rotation.x =
           pose.activity === "grooming" ? Math.sin(now * 0.01) * 0.08 : 0;
       }
@@ -1162,6 +1479,7 @@ export class World {
         position.z = THREE.MathUtils.lerp(transition.fromZ, position.z, ratio);
         transitionActive = true;
       }
+      a.group.visible = id !== this.selfId || !this.isFirstPerson;
       a.group.position.set(position.x, 0, position.z);
       a.group.scale.setScalar(ROOM_SCALE);
       const diff = Math.atan2(
@@ -1197,16 +1515,63 @@ export class World {
         const cat = this.cafe?.cats.find((c) => c.id === a.heldCatId);
         if (cat) {
           a.heldCat = catModel(cat.coat);
-          a.heldCat.scale.setScalar(0.7);
+          a.heldCat.scale.setScalar(0.4);
           a.heldCat.position.set(0, 0.77, 0.4);
           a.heldCat.rotation.y = Math.PI / 2;
           a.group.add(a.heldCat);
         }
       }
       a.label.material.opacity = to.state.connected ? 1 : 0.5;
+      a.label.scale.set(
+        this.isFirstPerson ? 0.7 : 1.55,
+        this.isFirstPerson ? 0.175 : 0.3875,
+        1,
+      );
       if (a.cup) a.cup.visible = !!to.state.carriedOrderId;
+      if (a.cup?.visible && a.human)
+        this.placeCupInHand(a.human, a.cup, a.group);
 
-      if (id === this.selfId)
+      if (id === this.selfId && this.isFirstPerson) {
+        const eye = new THREE.Vector3(
+          position.x,
+          to.state.sitting ? 1.4 : 1.65,
+          position.z,
+        );
+        if (!this.cameraReady) {
+          this.camera.position.copy(eye);
+          this.cameraReady = true;
+        }
+        this.camera.position.x = eye.x;
+        this.camera.position.z = eye.z;
+        this.camera.position.y = THREE.MathUtils.lerp(
+          this.camera.position.y,
+          eye.y,
+          1 - Math.exp(-deltaDraw * 14),
+        );
+        this.camera.rotation.order = "YXZ";
+        this.camera.rotation.set(this.lookPitch, this.lookYaw, 0, "YXZ");
+        this.hands.visible =
+          !!to.state.carriedCatId || !!to.state.carriedOrderId;
+        if (this.handCup) this.handCup.visible = !!to.state.carriedOrderId;
+        if (this.handCatId !== to.state.carriedCatId) {
+          if (this.handCat) {
+            disposeCatModel(this.handCat);
+            this.handCat.removeFromParent();
+            this.handCat = undefined;
+          }
+          this.handCatId = to.state.carriedCatId;
+          const cat = this.cafe?.cats.find((c) => c.id === this.handCatId);
+          if (cat) {
+            this.handCat = catModel(cat.coat);
+            this.handCat.scale.setScalar(0.45);
+            this.handCat.position.set(0, -0.63, -0.9);
+            this.handCat.rotation.y = Math.PI / 2;
+            this.hands.add(this.handCat);
+          }
+        }
+        for (const arm of this.handArms) arm.visible = this.hands.visible;
+      }
+      if (id === this.selfId && !this.isFirstPerson)
         this.target.lerp(
           this.area === "town"
             ? new THREE.Vector3(a.group.position.x, 0, a.group.position.z)
@@ -1243,15 +1608,53 @@ export class World {
     const cameraAngle =
       this.angle +
       (this.area === "town" ? 0 : roomOrigin(this.anchorLot).rotation);
-    this.camera.position.set(
-      this.target.x + Math.sin(cameraAngle) * this.renderedZoom,
-      this.renderedZoom * 0.95,
-      this.target.z + Math.cos(cameraAngle) * this.renderedZoom,
-    );
-    this.camera.lookAt(this.target);
+    if (!this.isFirstPerson || !this.cameraReady)
+      this.camera.position.set(
+        this.target.x + Math.sin(cameraAngle) * this.renderedZoom,
+        this.renderedZoom * 0.95,
+        this.target.z + Math.cos(cameraAngle) * this.renderedZoom,
+      );
+    if (!this.isFirstPerson || !this.cameraReady)
+      this.camera.lookAt(this.target);
+    if (!this.isFirstPerson) this.hands.visible = false;
     for (const [i, steam] of this.steam.entries()) {
       steam.visible = this.brewing;
       steam.position.y = 0.88 + ((now * 0.0006 + i * 0.25) % 1) * 0.4;
+    }
+    // Reticle rays and telemetry must use this frame's camera, not the prior render.
+    this.camera.updateMatrixWorld(true);
+    this.environment.updateMatrixWorld(true);
+    if (this.isFirstPerson && this.cameraReady && !this.lookPaused) {
+      const aim = this.hit();
+      const names: Record<string, string> = {
+        machine: "Coffee machine · hold E",
+        chair: "Chair · E to sit",
+        cat: "Cat · E to interact",
+        customer: "Customer · E",
+        door: "Café entrance · E",
+        exit: "Street · E to leave",
+        bowl: "Cat food bowl · E",
+      };
+      this.lastAim = aim ? (names[aim.kind] ?? "") : "";
+      this.hoverTarget = aim?.target;
+      this.aimChanged?.(this.lastAim, this.pointerLocked);
+    }
+    if (import.meta.env.DEV) {
+      const cameraAim = this.aimedHit();
+      this.renderer.domElement.dataset.camera = JSON.stringify({
+        x: this.camera.position.x,
+        y: this.camera.position.y,
+        z: this.camera.position.z,
+        yaw: this.lookYaw,
+        pitch: this.lookPitch,
+        firstPerson: this.isFirstPerson,
+        selfHidden: this.avatars.get(this.selfId)?.group.visible === false,
+        heldCat: this.handCatId,
+        cup: this.handCup?.visible,
+        aim: cameraAim?.kind,
+        aimTarget: cameraAim?.target,
+        streetPeople: this.streetPeople.length,
+      });
     }
     this.renderer.render(this.scene, this.camera);
     // Read-only screen coordinates let pointer tests target rendered objects without bypassing game logic.
@@ -1274,17 +1677,27 @@ export class World {
         };
       };
       this.renderer.domElement.dataset.machine = JSON.stringify(
-        project(-3.5, 1.95, -3.4),
+        project(-3.5, 1.65, -3.4),
       );
       this.renderer.domElement.dataset.poses = JSON.stringify(
-        [...this.avatars].map(([id, a]) => ({
-          id,
-          x: a.group.position.x,
-          z: a.group.position.z,
-          leg: a.human?.legs[0].upper.rotation.x,
-          heldCat: a.heldCatId,
-          sitting: a.samples.at(-1)?.state.sitting?.id,
-        })),
+        [...this.avatars].map(([id, a]) => {
+          const skeleton = a.human?.external;
+          const joint = (bone: THREE.Object3D | undefined) =>
+            bone
+              ? a.group.worldToLocal(bone.getWorldPosition(new THREE.Vector3()))
+              : undefined;
+          return {
+            id,
+            x: a.group.position.x,
+            z: a.group.position.z,
+            imported: !!skeleton,
+            hip: joint(skeleton?.upper[0]),
+            knee: joint(skeleton?.lower[0]),
+            foot: joint(skeleton?.feet[0]),
+            heldCat: a.heldCatId,
+            sitting: a.samples.at(-1)?.state.sitting?.id,
+          };
+        }),
       );
       this.renderer.domElement.dataset.floor = JSON.stringify(
         [
@@ -1343,6 +1756,12 @@ export class World {
     c.removeEventListener("pointerup", this.pointerUp);
     c.removeEventListener("pointercancel", this.pointerUp);
     c.removeEventListener("wheel", this.wheel);
+    if (this.pointerLocked) document.exitPointerLock();
+    document.removeEventListener("mousemove", this.mouseLook);
+    document.removeEventListener("pointerlockchange", this.lockChanged);
+    document.removeEventListener("pointerlockerror", this.lockChanged);
+    if (this.handCat) disposeCatModel(this.handCat);
+    this.glass.dispose();
     for (const a of this.avatars.values()) this.disposeAvatar(a);
     this.clearEnvironment();
     disposeCatResources();

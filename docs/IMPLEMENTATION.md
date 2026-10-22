@@ -1,5 +1,15 @@
 # Kafe Miaw implementation ledger
 
+## V0.6 — first-person street and imported civilians
+
+First-person is the default: eye height follows the interpolated player through town and doorways, lowers to 1.4 when sitting, and hides the owner's head. Mouse capture, Escape release, right-drag and touch-drag provide look controls. Aim/E and held-machine interactions retain server authority. Phone/dialog opening releases the mouse and pauses look; the phone blocks walking. Cups and carried cats have camera-relative hand models. V selects overview; design mode temporarily uses overview and restores the selected view.
+
+Town and room rendering now share scale 1. Buildings and lots were resized consistently, with clear door approaches. Eight imported building façades, parked cars, benches, lamps, foliage, distant hills and ten ambient pedestrian NPCs form the street. Shared car/bench/lamp/tree footprints enforce server collision. Pedestrians are presentation NPCs and never contribute to the online count; two actual clients remain the supported capacity. The café adds FPP front/right walls, glass frontage, an open doorway and a ceiling. Hidden shell geometry is excluded from pointer hits in overview, and background terrain sits below the floor to avoid coplanar flicker.
+
+Four Quaternius skinned civilian models replace generated humans in normal play, with idle/walk clips and runtime colour variants. Kafe Miaw adds seated-leg and independent foot-controller poses, carried objects and a loading fallback. Character meshes render on a separate camera layer; simple customer hit volumes support interactions without raycasting every skinned triangle. FPP hides large speech sprites and uses the existing HUD feedback. A lower counter/machine fits eye-level service. The imported KayKit couch now renders in furniture design. Original cats have a smaller floor scale.
+
+The local collection totals 27 CC0 GLBs / 4,853,624 bytes. Quaternius's author pages verify commercial CC0 use; the actual GLBs come from the pinned, attributed Ducz archive. Geometry and five animation clips are preserved while unused clips/buffers are removed. `scripts/import-civilians.py` reproduces the processed hashes without importing application source. Credits and original notices identify both the artist and redistribution. No gameplay dependency changed from v0.5; private player saves use the existing schema.
+
 ## V0.5 — living café and safe design mode
 
 The 3D world fills the viewport. Business management lives in an in-game phone; physical service remains in the scene. C/E/O/B/R/Shift and on-screen equivalents expose phone, interaction, open/close, design, rotation and sprint. Original articulated human characters replace the earlier robot model. Chairs reserve actual seats, movement/E stands, and owned cats can be approached, carried and put down without changing identity. Server-owned cat routines include wandering, rest, grooming, perches and toys. Visitors may sit and care for cats using their own supplies.

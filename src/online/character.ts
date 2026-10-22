@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { seed } from "../../shared/experience.ts";
+import { characterModel } from "./assets.ts";
 const sphere = new THREE.SphereGeometry(1, 12, 10);
 const materials = new Map<number, THREE.MeshStandardMaterial>();
 const material = (color: number) => {
@@ -11,9 +12,34 @@ const material = (color: number) => {
     );
   return m;
 };
-export type Human = ReturnType<typeof human>;
-/** Original articulated café characters: no downloaded robot mesh or skeletal dependency. */
-export function human(id: string, barista = false, shirtOverride?: number) {
+type Imported = Awaited<ReturnType<typeof characterModel>> & {
+  active: string;
+  upper: THREE.Object3D[];
+  lower: THREE.Object3D[];
+  feet: THREE.Object3D[];
+  arms: THREE.Object3D[];
+  forearms: THREE.Object3D[];
+  materials: THREE.Material[];
+};
+export type Human = {
+  root: THREE.Group;
+  head: THREE.Group;
+  eyes: THREE.Mesh[];
+  legs: { upper: THREE.Group; lower: THREE.Group }[];
+  arms: THREE.Group[];
+  phase: number;
+  barista: boolean;
+  external?: Imported;
+  disposed?: boolean;
+  lastTime?: number;
+};
+/** CC0 Quaternius civilians with an original lightweight fallback during loading. */
+export function human(
+  id: string,
+  barista = false,
+  shirtOverride?: number,
+  onLoad?: (name: string) => void,
+): Human {
   const n = seed(id),
     root = new THREE.Group(),
     head = new THREE.Group();
@@ -36,6 +62,7 @@ export function human(id: string, barista = false, shirtOverride?: number) {
     geo: THREE.BufferGeometry = sphere,
   ) => {
     const m = new THREE.Mesh(geo, material(color));
+    m.layers.set(1);
     m.position.set(x, y, z);
     m.scale.set(sx, sy, sz);
     m.castShadow = true;
@@ -107,7 +134,79 @@ export function human(id: string, barista = false, shirtOverride?: number) {
     mesh(root, 0x9d7957, -0.27, 0.86, 0.13, 0.11, 0.17, 0.16);
     mesh(root, 0x7d664b, -0.28, 1.08, 0.17, 0.025, 0.26, 0.018);
   }
-  return { root, head, eyes, legs, arms, phase: (n % 1000) / 100, barista };
+  const person: Human = {
+    root,
+    head,
+    eyes,
+    legs,
+    arms,
+    phase: (n % 1000) / 100,
+    barista,
+  };
+  const modelName = [
+    "npc_male_casual",
+    "npc_female_casual",
+    "npc_male_hoodie",
+    "npc_female_formal",
+  ][n % 4];
+  void characterModel(modelName)
+    .then((asset) => {
+      if (person.disposed) {
+        asset.mixer.stopAllAction();
+        asset.mixer.uncacheRoot(asset.object);
+        return;
+      }
+      const materials: THREE.Material[] = [];
+      // Quaternius faces -Z; game actors and chair headings use +Z.
+      asset.holder.rotation.y = Math.PI;
+      asset.object.traverse((o) => {
+        if (o instanceof THREE.Mesh) {
+          o.layers.set(1);
+          o.castShadow = true;
+          o.receiveShadow = true;
+          const tint = (original: THREE.Material) => {
+            const m = original.clone();
+            materials.push(m);
+            if (m instanceof THREE.MeshStandardMaterial) {
+              m.roughness = 0.85;
+              if (/^(Red_Dark|Orange|White)$/.test(m.name))
+                m.color.setHex(shirt);
+              if (/^Skin/.test(m.name)) m.color.setHex(skin);
+              if (/Hair|Eyebrow/.test(m.name)) m.color.setHex(hair);
+            }
+            return m;
+          };
+          o.material = Array.isArray(o.material)
+            ? o.material.map(tint)
+            : tint(o.material);
+        }
+      });
+      const find = (names: string[]) =>
+        names
+          .map(
+            (name) =>
+              asset.object.getObjectByName(name.replaceAll(".", "")) ??
+              asset.object.getObjectByName(name),
+          )
+          .filter((b): b is THREE.Object3D => !!b);
+      person.external = {
+        ...asset,
+        active: "",
+        upper: find(["UpperLeg.L", "UpperLeg.R"]),
+        lower: find(["LowerLeg.L", "LowerLeg.R"]),
+        feet: find(["Foot.L", "Foot.R"]),
+        arms: find(["UpperArm.L", "UpperArm.R"]),
+        forearms: find(["LowerArm.L", "LowerArm.R"]),
+        materials,
+      };
+      for (const child of root.children) child.visible = false;
+      root.add(asset.holder);
+      onLoad?.(modelName);
+    })
+    .catch(() => {
+      root.userData.artFallback = true;
+    });
+  return person;
 }
 export function animateHuman(
   h: Human,
@@ -155,6 +254,70 @@ export function animateHuman(
     Math.sin(time * 0.0007 + h.phase) * 0.035;
   const blink = (time + h.phase * 500) % 4300 < 110;
   for (const eye of h.eyes) eye.scale.y = blink ? 0.005 : 0.038;
+  if (h.external) {
+    const e = h.external,
+      role = moving ? "Walk" : working ? "Interact" : "Idle_Neutral";
+    if (e.active !== role) {
+      const next =
+        e.animations.find((a) => a.name === role) ??
+        e.animations.find((a) => a.name === "Idle")!;
+      e.mixer.stopAllAction();
+      e.mixer.clipAction(next).reset().play();
+      e.active = role;
+    }
+    e.mixer.update(
+      h.lastTime === undefined
+        ? 0
+        : Math.min(0.15, Math.max(0, (time - h.lastTime) / 1000)),
+    );
+    h.root.position.y = sitting ? -0.24 : 0;
+    e.object.updateMatrixWorld(true);
+    const bend = (bone: THREE.Object3D, angle: number) => {
+      const axis = new THREE.Vector3(1, 0, 0).applyQuaternion(
+        h.root.getWorldQuaternion(new THREE.Quaternion()),
+      );
+      if (bone.parent)
+        axis.applyQuaternion(
+          bone.parent.getWorldQuaternion(new THREE.Quaternion()).invert(),
+        );
+      bone.quaternion.premultiply(
+        new THREE.Quaternion().setFromAxisAngle(axis, angle),
+      );
+      bone.updateMatrixWorld(true);
+    };
+    if (sitting) {
+      // This Quaternius rig uses separate foot controllers under Root.
+      const offsets = e.feet.map((foot, i) =>
+        foot
+          .getWorldPosition(new THREE.Vector3())
+          .sub(e.lower[i].getWorldPosition(new THREE.Vector3())),
+      );
+      e.upper.forEach((b) => bend(b, -Math.PI / 2));
+      e.lower.forEach((b) => bend(b, Math.PI / 2));
+      e.feet.forEach((foot, i) => {
+        const position = e.lower[i]
+          .getWorldPosition(new THREE.Vector3())
+          .add(offsets[i]);
+        foot.position.copy(
+          foot.parent ? foot.parent.worldToLocal(position) : position,
+        );
+        foot.updateMatrixWorld(true);
+      });
+    }
+    if (carrying) {
+      e.arms.forEach((b) => bend(b, -0.6));
+      e.forearms.forEach((b) => bend(b, -0.7));
+    }
+  }
+  h.lastTime = time;
+}
+export function disposeHuman(h: Human) {
+  h.disposed = true;
+  if (h.external) {
+    h.external.mixer.stopAllAction();
+    h.external.mixer.uncacheRoot(h.external.object);
+    for (const m of h.external.materials) m.dispose();
+  }
 }
 export function disposeHumans() {
   sphere.dispose();

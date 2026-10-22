@@ -70,6 +70,7 @@ async function phone(page: Page, open = true) {
 async function connect(p: Page) {
   await p.goto(origin);
   await p.locator("#join").click();
+  await p.locator("#view").click();
   await wait(
     async () =>
       (await p.locator("#dot").getAttribute("class")) === "dot connected",
@@ -152,7 +153,11 @@ try {
       (await pa.locator("#world canvas").getAttribute("data-poses")) ?? "[]",
     );
     return data.some(
-      (p: any) => p.id === aid && Math.abs(p.leg + Math.PI / 2) < 0.01,
+      (p: any) =>
+        p.id === aid &&
+        p.imported &&
+        p.knee.z - p.hip.z > 0.2 &&
+        p.knee.y - p.foot.y > 0.2,
     );
   }, "renderer must articulate sitting legs");
   await pa.screenshot({ path: "test-results/life-sitting.png" });
@@ -290,6 +295,7 @@ try {
   assert.equal(app.town.cafes!.store.get(c.id).food, 5);
   await pa.reload({ waitUntil: "domcontentloaded" });
   await pa.locator("#join").click();
+  await pa.locator("#view").click();
   await wait(
     async () =>
       (await pa.locator("#dot").getAttribute("class")) === "dot connected",

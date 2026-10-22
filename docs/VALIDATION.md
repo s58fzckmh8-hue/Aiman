@@ -1,5 +1,21 @@
 # Validation ledger
 
+## V0.6 — FPP and licensed civilian models (22 October 2026)
+
+Current environment: Node 24, Linux headless Chromium with software WebGL. Automated checks use temporary player stores and real browser input.
+
+- **43 online tests passed**, no failures/skips. Added checks cover FPP yaw/pitch bounds, movement/scale on both sides of town, and solid street-prop footprints with clear entrances. The original ownership, economy, saves, paid cat slots, placement and work/refund checks remain passing.
+- **3 offline model tests passed**, no failures/skips. Type checking passed.
+- **27 CC0 GLBs / 4,853,624 bytes** passed inventory, pinned-URL, checksum, embedded-resource, buffer-view bounds and required-character-animation checks. The civilian import tool was executed against all four immutable source files and reproduced all processed hashes with TLS and checksum validation enabled. No application code from the redistribution was imported.
+- The living-café browser suite passed with imported civilians: actual chair clicks, seated hip/knee/foot joint positions, standing, carried cat rendering, physical inventory placement/rotation, visitor food, reload and mobile layout.
+- The final FPP browser suite passed: default eye-level view and hidden own head, real imported civilian/street models, ten ambient NPCs with an honest one-player counter, pointer capture/mouse turn, phone release and movement pause, doorway camera continuity, actual WASD movement, reticle-selected coffee hold/cancellation/refund, full brew/pickup/rendered carried cup/nearby delivery and owner payment, design overview/return, seated/standing eye height, actual cat pickup/rendered first-person cuddle/put-down, touch look and portrait overflow. No JavaScript errors.
+
+During integration, the old overview pointer test caught invisible FPP roof geometry intercepting chair clicks. Picking now excludes invisible ancestors; moving terrain below the café floor also removes coplanar flicker. The imported rig's separate foot controllers are positioned with seated legs, and Quaternius's -Z facing is converted to the game's +Z actor convention. FPP reticle rays now update camera matrices before picking, and E in FPP uses the reticle rather than selecting a nearby chair when no aimed object is available. Stand/put-down and the nearby exit retain contextual controls.
+
+Software-rendered tests now wait for real client order/work state and the rendered eye to reach a stopped player before aiming. An earlier test aimed using an eye position that was still interpolating after WASD movement. Tests still send actual keyboard/mouse/touch events and require server work, refunds, poses and payment; no gameplay action or coordinate is injected to bypass an interaction. Overview remains an explicit supported V mode for the older pointer regression suites.
+
+The two-player café regression passed after the camera/model changes: mouse hold/cancel/refund, pickup/delivery/payment, isolated visitor wallet, touch and keyboard work, paid slots/adoption, supplies, room upgrade, save reload, portrait layout and exit. The original online regression also passed movement in both directions, reconnect, same-cookie replacement, departure and touch controls. The offline browser regression passed serving, feeding and restored saves. The production build and built-entry smoke test passed online WebGL with a real backend and offline serving, with no JavaScript errors. Vite retains its engine-bundle-size advisory. All four browser suites (FPP, living café, café service and original multiplayer/offline) and production smoke completed successfully. Browser checks do not certify physical phones, Firefox/Safari, Internet latency, 20-player capacity or CrazyGames integration. Street pedestrians are cosmetic NPCs; parked cars are solid scenery. Driving, homes, functional town shops, staff, desserts and real rewarded ads remain future work.
+
 ## V0.5 — living café (22 October 2026)
 
 Validated in Node 24 / Linux headless Chromium. All player saves used by automated checks are temporary fixtures.

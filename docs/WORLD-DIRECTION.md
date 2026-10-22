@@ -4,7 +4,7 @@ This records the accepted direction from the development conversation. It is a s
 
 ## Play experience
 
-The world fills the screen. Movement and interactions happen in the scene; management is an in-game phone. WASD walks, Shift sprints with empty hands, E interacts, O opens/closes the café, C opens the phone, and B/R arrange/rotate furniture. A doorway crossing must visibly follow the correct building entrance, with a continuous camera, rather than cutting between unrelated maps.
+First-person at human eye height is the default, following the supplied The Roast Coffee Shop Simulator screenshots. The world fills the screen. Movement and interactions happen in the scene; management is an in-game phone. WASD walks, Shift sprints with empty hands, E interacts, O opens/closes the café, C opens the phone, V selects first-person/overview, and B/R arrange/rotate furniture. Design mode uses overview and restores the selected play view. Mouse capture, right-drag and touch-drag support looking around. A doorway crossing must visibly follow the correct building entrance, with a continuous camera, rather than cutting between unrelated maps.
 
 The implemented foundation includes physical coffee brewing, carrying and delivery; articulated human characters; occupied chairs; owned-cat pickup and put-down; server-owned cat routines, perches and toys; furniture inventory and validated placement; paid cat slots; capped rarity bonuses; visitor care using the visitor's own supplies; progression goals and a saved economy. The living-café browser checks cover real pointer/keyboard interactions and reload persistence; see VALIDATION.md for the current full verification record.
 
@@ -37,7 +37,7 @@ Coffee recipes unlock from actual service progress. Paid dessert/menu additions 
 
 ## Artwork
 
-The project now has a curated local collection of 23 CC0 GLBs (1,223,728 bytes) from pinned official Kenney/KayKit sources, with license texts and hashes in `public/assets/`. The new selection includes a hatchback, six additional building façades, a couch, bed, low table, lamp, benches, bushes and streetlights. Their presence in the asset archive does not establish that driving, houses or shops have been implemented. Runtime integration and gameplay validation are separate steps. Original human/cat animation and toy geometry remain credited to Kafe Miaw.
+The project has 27 local CC0 GLBs (4,853,624 bytes): the original 23 Kenney/KayKit files plus four Quaternius civilian humans from an explicitly credited, pinned Ducz redistribution. Source licences were verified on the author's own website source as well as the redistribution notice. Runtime uses four civilian styles and their walk/idle clips, eight façade styles, parked hatchbacks, benches, lamp posts and adapted bush foliage. Cat geometry, hands, coffee machine, seated/carrying poses and sound remain Kafe Miaw work. The catalogue includes home furniture reserved for later gameplay. Source hashes, processed hashes, author links, licences and a repeatable verified import script are included.
 
 ## Release limits
 

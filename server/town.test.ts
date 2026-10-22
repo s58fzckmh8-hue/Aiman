@@ -2,7 +2,14 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { WebSocket } from "ws";
 import { Town } from "./town.ts";
-import { blocked, move, WORLD } from "../shared/world.ts";
+import {
+  blocked,
+  move,
+  WORLD,
+  BUILDINGS,
+  doorway,
+  STREET_PROPS,
+} from "../shared/world.ts";
 const profile = (id: string) => ({
   id,
   name: `Guest ${id}`,
@@ -59,13 +66,27 @@ test("server owns coordinates, normalized speed and rejects teleport/injected cu
   assert.equal(r.state.x, x, "stale input stops movement");
 });
 test("building and world collision reject walls including long tick movement", () => {
-  let p = { x: -40, z: -10 };
+  const building = BUILDINGS[0];
+  let p = doorway(0);
   for (let i = 0; i < 50; i++) p = move(p, 0, -1, 0.05);
-  assert.ok(p.z > -12.13);
+  assert.ok(p.z >= building.z + building.d / 2 + WORLD.radius);
+  assert.ok(p.z < doorway(0).z, "walker approaches the wall before stopping");
   assert.equal(blocked(p.x, p.z), false);
-  let edge = { x: 47, z: 0 };
+  let edge = { x: WORLD.maxX - 1, z: 0 };
   for (let i = 0; i < 20; i++) edge = move(edge, 1, 0, 99);
   assert.ok(edge.x <= WORLD.maxX - WORLD.radius);
+});
+test("street furniture and parked cars share solid footprints with the server", () => {
+  for (const prop of STREET_PROPS) {
+    assert.equal(blocked(prop.x, prop.z), true, prop.kind);
+    const start = { x: prop.x, z: prop.z + prop.d / 2 + 1 };
+    if (blocked(start.x, start.z)) continue;
+    let p = start;
+    for (let i = 0; i < 30; i++) p = move(p, 0, -1, 0.05);
+    assert.ok(p.z >= prop.z + prop.d / 2 + WORLD.radius, prop.kind);
+  }
+  for (const b of BUILDINGS)
+    assert.equal(blocked(doorway(b.id).x, doorway(b.id).z), false);
 });
 test("reconnect preserves identity and lot, old close/input cannot control replacement", () => {
   const town = new Town(2, 100);

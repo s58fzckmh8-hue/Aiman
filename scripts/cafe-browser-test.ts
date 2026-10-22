@@ -70,6 +70,7 @@ async function phone(page: Page, open = true) {
 async function connect(p: Page) {
   await p.goto(origin);
   await p.locator("#join").click();
+  await p.locator("#view").click();
   await wait(
     async () =>
       (await p.locator("#dot").getAttribute("class")) === "dot connected",
@@ -236,6 +237,7 @@ try {
   assert.equal(app.town.cafes!.store.byOwner(aid).coins, 98);
   await pa.reload({ waitUntil: "domcontentloaded" });
   await pa.locator("#join").click();
+  await pa.locator("#view").click();
   await wait(
     async () =>
       (await pa.locator("#dot").getAttribute("class")) === "dot connected",

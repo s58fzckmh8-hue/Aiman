@@ -20,8 +20,18 @@ let interaction: Interaction | undefined;
 let world: World | null = null;
 let available = true;
 try {
-  world = new World($("#world"), (hit, phase) =>
-    interaction?.handle(hit, phase),
+  world = new World(
+    $("#world"),
+    (hit, phase) => interaction?.handle(hit, phase),
+    (fp) => {
+      $("#app").classList.toggle("first-person", fp);
+      $("#view").textContent = fp ? "V · Overview" : "V · First-person";
+    },
+    (label, locked) => {
+      if ($("#aim-target").textContent !== label)
+        $("#aim-target").textContent = label;
+      $("#look-tip").hidden = locked;
+    },
   );
 } catch {
   available = false;
@@ -82,6 +92,7 @@ const network = new Network({
   status(s, message) {
     connection = s;
     if (s !== "connected") {
+      world?.pauseLook(true);
       cafePanel?.disconnected();
       interaction?.finish(false);
       audio.brewing(false);
@@ -108,6 +119,7 @@ const network = new Network({
     }
   },
   welcome(w) {
+    world?.pauseLook(false);
     selfId = w.self.id;
     capacity = w.capacity;
     if (world) world.selfId = selfId;
@@ -185,6 +197,7 @@ interaction = new Interaction(
   $("#brew-progress"),
 );
 $("#credits").onclick = () => {
+  world?.pauseLook(true);
   interaction?.finish();
   $<HTMLDialogElement>("#art-credits").showModal();
 };
@@ -232,6 +245,7 @@ function phoneOpen() {
   return !$("#app").classList.contains("management-hidden");
 }
 function setPhone(open: boolean) {
+  world?.pauseLook(open);
   $("#app").classList.toggle("management-hidden", !open);
   $("#manage").setAttribute("aria-expanded", String(open));
   if (open) {
@@ -253,7 +267,7 @@ interactButton.onpointerdown = (e) => {
   e.preventDefault();
   if (phoneOpen()) setPhone(false);
   interactButton.setPointerCapture(e.pointerId);
-  interaction?.key();
+  interaction?.key(world?.aimedHit(), world?.isFirstPerson);
 };
 interactButton.onpointerup =
   interactButton.onpointercancel =
@@ -269,15 +283,21 @@ sprintButton.onpointerup =
   sprintButton.onpointercancel =
   sprintButton.onlostpointercapture =
     () => touch.delete("sprint");
+$("#view").onclick = () => {
+  if (!arranging) world?.toggleView();
+};
 $("#camera").onclick = () => world?.resetCamera();
 $("#help").onclick = () => {
   keys.clear();
   touch.clear();
   interaction?.finish();
+  world?.pauseLook(true);
   network.input(0, 0);
   $<HTMLDialogElement>("#how").showModal();
 };
 $("#close-help").onclick = () => $<HTMLDialogElement>("#how").close();
+for (const dialog of document.querySelectorAll("dialog"))
+  dialog.addEventListener("close", () => world?.pauseLook(phoneOpen()));
 window.addEventListener("keydown", (e) => {
   if (
     e.target instanceof HTMLInputElement ||
@@ -318,6 +338,16 @@ window.addEventListener("keydown", (e) => {
     return;
   }
   if (phoneOpen()) return;
+  if (
+    e.key.toLowerCase() === "v" &&
+    !e.repeat &&
+    !arranging &&
+    !document.querySelector("dialog[open]")
+  ) {
+    e.preventDefault();
+    world?.toggleView();
+    return;
+  }
   if (arranging) {
     if (e.key.toLowerCase() === "r") {
       e.preventDefault();
@@ -337,7 +367,7 @@ window.addEventListener("keydown", (e) => {
     !document.querySelector("dialog[open]")
   ) {
     e.preventDefault();
-    interaction?.key();
+    interaction?.key(world?.aimedHit(), world?.isFirstPerson);
   }
   if (
     controls.includes(e.key.toLowerCase()) &&

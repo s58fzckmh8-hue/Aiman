@@ -1,6 +1,6 @@
 {
   "name": "kafe-miaw",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -17,7 +17,8 @@
     "test:production": "tsx scripts/production-smoke.ts",
     "test:cafe-browser": "tsx scripts/cafe-browser-test.ts",
     "test:assets": "tsx scripts/asset-check.ts",
-    "test:life-browser": "tsx scripts/life-browser-test.ts"
+    "test:life-browser": "tsx scripts/life-browser-test.ts",
+    "test:fpp-browser": "tsx scripts/fpp-browser-test.ts"
   },
   "dependencies": {
     "phaser": "^3.90.0",
